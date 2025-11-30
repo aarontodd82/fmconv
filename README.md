@@ -52,8 +52,8 @@ These formats have **embedded FM instruments** - bank selection is not needed:
 | Extension | Format | Games/Software |
 |-----------|--------|----------------|
 | `.rad` | Reality AdLib Tracker | Various shareware |
-| `.a2m` | Adlib Tracker 2 | Tracker music |
-| `.imf`, `.wlf` | id Software Music | Wolfenstein 3D, Commander Keen |
+| `.a2m`, `.a2t` | Adlib Tracker 2 | Tracker music |
+| `.imf`, `.wlf`, `.adlib` | id Software Music | Wolfenstein 3D, Commander Keen |
 | `.dro` | DOSBox Raw OPL | DOSBox captures |
 | `.cmf` | Creative Music File | Early Sound Blaster games |
 | `.rol` | AdLib Visual Composer | Professional compositions |
@@ -70,23 +70,30 @@ These formats have **embedded FM instruments** - bank selection is not needed:
 | `.dfm` | Digital-FM | Tracker music |
 | `.dmo` | Twin TrackPlayer | Tracker music |
 | `.dtm` | DeFy Adlib Tracker | Tracker music |
-| `.got` | GOT Music | Various |
+| `.got` | GOT Music | God of Thunder |
 | `.hsp` | HSC Packed | Packed HSC |
+| `.hsq`, `.sqx`, `.sdb`, `.agd`, `.ha2` | Herbulot AdLib System | Various games |
 | `.jbm` | JBM Adlib Music | Various |
 | `.mad` | Mlat Adlib Tracker | Tracker music |
-| `.mdi` | AdLib MIDI | AdLib MIDI variant |
+| `.mdi` | AdLib MIDIPlay | AdLib MIDI variant |
 | `.mkj` | MKJamz | Various |
 | `.msc` | AdLib MSC | Various |
 | `.mtk` | MPU-401 Trakker | Tracker music |
-| `.raw` | Raw AdLib Capture | Direct captures |
-| `.rix` | Softstar RIX | Chinese RPGs |
+| `.mtr` | Master Tracker | Tracker music |
+| `.pis` | Beni Tracker | Tracker music |
+| `.plx` | PALLADIX Sound System | Various games |
+| `.raw`, `.rac` | Raw AdLib Capture | Direct captures |
+| `.rix`, `.mkf` | Softstar RIX | Chinese RPGs |
 | `.sa2` | Surprise! Adlib Tracker 2 | Tracker music |
 | `.sat` | Surprise! Adlib Tracker | Tracker music |
 | `.sci` | Sierra SCI | Sierra games |
 | `.sng` | Various | SNGPlay, Faust, etc. |
 | `.sop` | Note Sequencer | sopepos software |
-| `.xad` | Various | FLASH, BMF, etc. |
+| `.xad`, `.bmf` | Various | FLASH, BMF, etc. |
 | `.xms` | XMS-Tracker | Tracker music |
+| `.xsm` | eXtra Simple Music | Tracker music |
+| `.m` | Ultima 6 Music | Ultima 6 |
+| `.mus`, `.mdy`, `.ims` | AdLib MIDI/IMS | Various |
 
 ## Command-Line Options
 
