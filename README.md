@@ -36,10 +36,12 @@ These formats contain note/program change messages and require an FM instrument 
 | Extension | Format | Notes |
 |-----------|--------|-------|
 | `.mid`, `.midi`, `.smf` | Standard MIDI File | General MIDI |
+| `.rmi` | RIFF MIDI | Windows MIDI format |
 | `.kar` | Karaoke MIDI | MIDI with lyrics |
 | `.xmi` | Extended MIDI | Miles Sound System (Origin, Westwood, etc.) |
 | `.mus` | DMX Music | DOOM, Heretic, Hexen |
 | `.hmp`, `.hmi` | HMI MIDI | Human Machine Interfaces (Descent, Duke3D) |
+| `.klm` | Wacky Wheels Music | Apogee game |
 
 **Bank selection matters!** These formats sound completely different with different banks because the FM instrument definitions come from the bank, not the file.
 

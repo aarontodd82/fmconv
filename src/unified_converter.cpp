@@ -280,7 +280,8 @@ static FormatCategory categorizeFormat(const std::string& filename)
 
     // MIDI-style formats (need bank selection)
     if (ext == "mid" || ext == "midi" || ext == "smf" || ext == "kar" ||
-        ext == "xmi" || ext == "mus" || ext == "hmp" || ext == "hmi")
+        ext == "rmi" || ext == "xmi" || ext == "mus" || ext == "hmp" ||
+        ext == "hmi" || ext == "klm")
     {
         return FormatCategory::MIDI_STYLE;
     }
@@ -310,7 +311,7 @@ void show_usage(const char* program_name)
     printf("Usage: %s [OPTIONS] <input> [output]\n\n", program_name);
     printf("Convert game music formats to VGM for OPL2/OPL3 hardware\n\n");
 
-    printf("MIDI-style formats (MIDI, XMI, MUS, HMP/HMI):\n");
+    printf("MIDI-style formats (MIDI, RMI, XMI, MUS, HMP/HMI, KLM):\n");
     printf("  These formats use MIDI note/program messages and require\n");
     printf("  FM instrument banks. Bank can be auto-detected or specified.\n\n");
 
