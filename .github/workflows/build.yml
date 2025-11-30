@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmconv-windows-x64
+          path: build/Release/fmconv.exe
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/Release/fmconv.exe
+          asset_name: fmconv-windows-x64.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -static-libgcc"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Rename binary
+        run: mv build/fmconv build/fmconv-linux-x64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmconv-linux-x64
+          path: build/fmconv-linux-x64
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/fmconv-linux-x64
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake (Universal Binary)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Rename binary
+        run: mv build/fmconv build/fmconv-macos-universal
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fmconv-macos-universal
+          path: build/fmconv-macos-universal
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/fmconv-macos-universal
