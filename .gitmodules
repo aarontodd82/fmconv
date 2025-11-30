@@ -1,0 +1,9 @@
+[submodule "libADLMIDI"]
+	path = libADLMIDI
+	url = https://github.com/Wohlstand/libADLMIDI.git
+[submodule "adplug"]
+	path = adplug
+	url = https://github.com/adplug/adplug.git
+[submodule "libbinio"]
+	path = libbinio
+	url = https://github.com/adplug/libbinio.git

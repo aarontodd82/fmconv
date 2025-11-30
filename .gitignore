@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+
+# Generated output files
+*.vgm
+*.vgz
+*.wav
+
+# Test output
+test_output/
+
+# IDE files
+.vscode/
+.vs/
+*.user
+*.suo
+*.sln.docstates
+
+# Test input files (optional - uncomment to exclude)
+# test_files/*.XMI
+# test_files/*.HMP
+# test_files/*.MUS
+# test_files/*.IMF
+# test_files/*.DRO
+# test_files/*.RAD
