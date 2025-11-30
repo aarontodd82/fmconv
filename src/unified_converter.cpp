@@ -287,18 +287,21 @@ static FormatCategory categorizeFormat(const std::string& filename)
     }
 
     // Native OPL formats (embedded instruments)
-    // This covers most AdPlug-supported formats
-    if (ext == "a2m" || ext == "adl" || ext == "amd" || ext == "bam" ||
-        ext == "cff" || ext == "cmf" || ext == "d00" || ext == "dfm" ||
-        ext == "dmo" || ext == "dro" || ext == "dtm" || ext == "got" ||
-        ext == "hsc" || ext == "hsp" || ext == "imf" || ext == "wlf" ||
-        ext == "ksm" || ext == "laa" || ext == "lds" || ext == "mad" ||
-        ext == "mdi" || ext == "mkj" || ext == "msc" || ext == "mtk" ||
-        ext == "rad" || ext == "raw" || ext == "rix" || ext == "rol" ||
-        ext == "s3m" || ext == "sa2" || ext == "sat" || ext == "sci" ||
-        ext == "sng" || ext == "sop" || ext == "xad" || ext == "xms" ||
-        ext == "xsm" || ext == "jbm" || ext == "m" || ext == "rac" ||
-        ext == "bmf" || ext == "agd" || ext == "mus" || ext == "ims")
+    // This covers all AdPlug-supported formats
+    if (ext == "a2m" || ext == "a2t" || ext == "adl" || ext == "adlib" ||
+        ext == "amd" || ext == "bam" || ext == "bmf" || ext == "cff" ||
+        ext == "cmf" || ext == "d00" || ext == "dfm" || ext == "dmo" ||
+        ext == "dro" || ext == "dtm" || ext == "got" || ext == "ha2" ||
+        ext == "hsc" || ext == "hsp" || ext == "hsq" || ext == "imf" ||
+        ext == "ims" || ext == "jbm" || ext == "ksm" || ext == "laa" ||
+        ext == "lds" || ext == "m" || ext == "mad" || ext == "mdi" ||
+        ext == "mdy" || ext == "mkf" || ext == "mkj" || ext == "msc" ||
+        ext == "mtk" || ext == "mtr" || ext == "mus" || ext == "pis" ||
+        ext == "plx" || ext == "rac" || ext == "rad" || ext == "raw" ||
+        ext == "rix" || ext == "rol" || ext == "s3m" || ext == "sa2" ||
+        ext == "sat" || ext == "sci" || ext == "sdb" || ext == "sng" ||
+        ext == "sop" || ext == "sqx" || ext == "wlf" || ext == "xad" ||
+        ext == "xms" || ext == "xsm" || ext == "agd")
     {
         return FormatCategory::NATIVE_OPL;
     }
