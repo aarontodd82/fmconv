@@ -1,27 +1,38 @@
-# fmconv - Game Music to VGM Converter
+# fmconv - FM9 Converter for FM-90s
 
-A unified command-line tool to convert retro game music formats to VGM (Video Game Music) format for playback on OPL2/OPL3 hardware synthesizers.
+Convert retro game music to FM9 format for playback on the [FM-90s](https://github.com/aarontodd82/FM-90s) hardware OPL3 chip player.
 
 ## Overview
 
-fmconv supports **50+ audio formats** from classic DOS games, combining two powerful conversion engines:
+fmconv converts **50+ audio formats** from classic DOS games to FM9, an extended VGM format that supports:
 
-1. **libADLMIDI** - Handles MIDI-style formats that use note/program change messages
-2. **AdPlug** - Handles native OPL tracker formats with embedded FM instruments
+- **OPL2/OPL3 FM synthesis** - Authentic hardware playback via YMF262 chip
+- **Embedded PCM audio** - Layer WAV or MP3 audio alongside FM synthesis
+- **Effects automation** - JSON-based timeline for reverb, delay, chorus, and EQ
 
-The tool automatically detects the input format and routes it to the appropriate engine.
+The converter uses two engines:
+1. **libADLMIDI** - MIDI-style formats (MIDI, XMI, MUS, HMP/HMI) with 79 selectable FM instrument banks
+2. **AdPlug** - Native OPL tracker formats (RAD, IMF, DRO, etc.) with embedded instruments
+
+VGM and VGZ output is also supported for use with other players.
 
 ## Quick Start
 
 ```bash
-# Convert a MIDI file (auto-detects instrument bank)
+# Convert to FM9 (default)
 fmconv game_music.mid
 
-# Convert a native tracker file (uses embedded instruments)
-fmconv chiptune.rad
+# Add PCM audio track alongside FM
+fmconv chiptune.rad --audio drums.wav
 
-# Specify output filename
-fmconv input.xmi output.vgm
+# Add effects automation
+fmconv tune.mid --fx effects.json
+
+# Convert existing VGM/VGZ to FM9 with audio
+fmconv existing.vgz --audio vocals.mp3
+
+# Output as VGZ instead of FM9
+fmconv doom.mus --vgz
 
 # Use specific instrument bank for MIDI
 fmconv doom.mus --bank 16
@@ -101,11 +112,26 @@ These formats have **embedded FM instruments** - bank selection is not needed:
 
 | Option | Description |
 |--------|-------------|
-| `-o, --output <path>` | Output filename (default: input name with .vgz) |
-| `--no-compress` | Output uncompressed .vgm instead of gzip-compressed .vgz |
-| `-h, --help` | Show help message |
-| `--verbose` | Enable verbose output |
+| `-o, --output <path>` | Output filename (default: input name with .fm9) |
 | `-y, --yes` | Non-interactive mode (skip prompts) |
+| `--no-suffix` | Don't add format suffix (_RAD, _MID, etc.) to filename |
+| `--verbose` | Enable verbose output |
+| `-h, --help` | Show help message |
+
+### Output Format Options
+
+| Option | Description |
+|--------|-------------|
+| `--format <fmt>` | Output format: `fm9` (default), `vgz`, or `vgm` |
+| `--vgz` | Shorthand for `--format vgz` |
+| `--vgm` | Shorthand for `--format vgm` |
+
+### FM9 Options
+
+| Option | Description |
+|--------|-------------|
+| `--audio <file>` | Embed WAV or MP3 audio file for PCM playback alongside FM |
+| `--fx <file>` | Embed effects automation JSON file |
 
 ### MIDI-Style Format Options
 
@@ -272,20 +298,50 @@ For MIDI-style formats, the instrument bank determines how every instrument soun
 
 ## Technical Details
 
-- Output is VGM 1.51 format, gzip-compressed to .vgz by default
+### FM9 Format
+
+FM9 is an extended VGM format designed for the FM-90s hardware player:
+
+```
+[GZIP: VGM + FM9 Header + FX JSON] + [RAW: Audio data]
+```
+
+- VGM data and metadata are gzip compressed for efficient storage
+- Audio data (WAV/MP3) is stored uncompressed after the gzip section for streaming playback
+- Standard VGM players ignore the FM9 extension (they stop at the `0x66` end command)
+
+### Conversion
+
+- VGM 1.51 format with YM3812 (OPL2) or YMF262 (OPL3) chip headers
 - MIDI-style formats use libADLMIDI to convert note events to OPL3 register writes
 - Native OPL formats use AdPlug with embedded instruments; chip type (OPL2/Dual OPL2/OPL3) is auto-detected from register usage
 
 ## Examples
 
-### Basic Usage
+### FM9 with Embedded Audio
 
 ```bash
-# Auto-detect everything
+# Convert tracker with PCM drums
+fmconv chiptune.rad --audio drums.wav
+
+# Add MP3 audio to existing VGM
+fmconv existing.vgz --audio vocals.mp3
+
+# Full production with effects
+fmconv song.mid --audio backing.wav --fx effects.json
+```
+
+### Basic Conversion
+
+```bash
+# Convert to FM9 (default)
 fmconv game_music.mid
 
+# Convert to VGZ for other players
+fmconv game_music.mid --vgz
+
 # Specify output file
-fmconv input.rad output.vgm
+fmconv input.rad output.fm9
 ```
 
 ### MIDI Conversion
@@ -329,7 +385,7 @@ fmconv looping.rad --no-loop --length 300
 ### Adding Metadata
 
 ```bash
-fmconv doom_e1m1.mus output.vgm \
+fmconv doom_e1m1.mus \
     --bank 16 \
     --title "At Doom's Gate" \
     --author "Bobby Prince" \
