@@ -45,13 +45,23 @@
 #include "vgm_writer/gd3_tag.h"
 #include "detection/bank_detector.h"
 #include "formats/hmp_to_midi.h"
+#include "fm9_writer/fm9_writer.h"
 
 // Format categories
 enum class FormatCategory
 {
     MIDI_STYLE,     // Use libADLMIDI (needs bank)
     NATIVE_OPL,     // Use AdPlug (embedded instruments)
+    VGM_INPUT,      // Already VGM/VGZ - pass through (for adding audio/fx to FM9)
     UNKNOWN
+};
+
+// Output format
+enum class OutputFormat
+{
+    FM9,    // FM9 (gzipped, default)
+    VGZ,    // VGZ (gzipped VGM)
+    VGM     // VGM (uncompressed)
 };
 
 // Command-line options
@@ -73,8 +83,12 @@ struct Options
     bool loop_once = true;      // Stop after first loop (AdPlug)
 
     // Output options
-    bool compress = true;       // Gzip to .vgz (default on)
+    OutputFormat output_format = OutputFormat::FM9;  // Default to FM9
     bool add_suffix = true;     // Add format suffix like _RAD (default on)
+
+    // FM9 options
+    std::string audio_file;     // Optional audio file (WAV/MP3)
+    std::string fx_file;        // Optional effects JSON file
 
     // GD3 metadata
     std::string title;
@@ -156,6 +170,85 @@ static bool hasGzipSupport()
 #endif
 }
 
+// Gzip decompression for VGZ input
+// Returns empty vector on error or if not gzip
+static std::vector<uint8_t> gzipDecompress(const std::vector<uint8_t>& data)
+{
+#if defined(HAVE_MINIZ) || defined(HAVE_ZLIB)
+    if (data.size() < 18) return {};  // Too small for gzip
+
+    // Check gzip magic
+    if (data[0] != 0x1f || data[1] != 0x8b) {
+        return {};  // Not gzip
+    }
+
+    // Get original size from last 4 bytes (little-endian)
+    uint32_t orig_size =
+        data[data.size() - 4] |
+        (data[data.size() - 3] << 8) |
+        (data[data.size() - 2] << 16) |
+        (data[data.size() - 1] << 24);
+
+    // Sanity check - don't allocate more than 64MB
+    if (orig_size > 64 * 1024 * 1024) {
+        fprintf(stderr, "Error: Decompressed size too large (%u bytes)\n", orig_size);
+        return {};
+    }
+
+    std::vector<uint8_t> decompressed(orig_size);
+
+    // Skip gzip header (minimum 10 bytes)
+    size_t header_size = 10;
+    uint8_t flags = data[3];
+
+    // Handle optional header fields
+    if (flags & 0x04) {  // FEXTRA
+        if (header_size + 2 > data.size()) return {};
+        uint16_t xlen = data[header_size] | (data[header_size + 1] << 8);
+        header_size += 2 + xlen;
+    }
+    if (flags & 0x08) {  // FNAME
+        while (header_size < data.size() && data[header_size] != 0) header_size++;
+        header_size++;  // Skip null terminator
+    }
+    if (flags & 0x10) {  // FCOMMENT
+        while (header_size < data.size() && data[header_size] != 0) header_size++;
+        header_size++;
+    }
+    if (flags & 0x02) {  // FHCRC
+        header_size += 2;
+    }
+
+    if (header_size >= data.size() - 8) return {};
+
+    // Deflate data is between header and 8-byte trailer (CRC32 + size)
+    size_t deflate_size = data.size() - header_size - 8;
+
+    mz_stream strm = {};
+    strm.next_in = data.data() + header_size;
+    strm.avail_in = static_cast<unsigned int>(deflate_size);
+    strm.next_out = decompressed.data();
+    strm.avail_out = static_cast<unsigned int>(decompressed.size());
+
+    // Use raw inflate (windowBits = -15)
+    int ret = mz_inflateInit2(&strm, -MZ_DEFAULT_WINDOW_BITS);
+    if (ret != MZ_OK) return {};
+
+    ret = mz_inflate(&strm, MZ_FINISH);
+    mz_inflateEnd(&strm);
+
+    if (ret != MZ_STREAM_END) {
+        fprintf(stderr, "Error: Gzip decompression failed\n");
+        return {};
+    }
+
+    return decompressed;
+#else
+    (void)data;
+    return {};
+#endif
+}
+
 // Compress data using gzip format
 // Returns empty vector on error or if compression not available
 static std::vector<uint8_t> gzipCompress(const std::vector<uint8_t>& data)
@@ -233,9 +326,8 @@ static std::vector<uint8_t> gzipCompress(const std::vector<uint8_t>& data)
 #endif
 }
 
-// Write data to file, optionally gzip compressed
-// Returns actual bytes written (for reporting)
-static size_t writeOutput(const std::string& filename, const std::vector<uint8_t>& data, bool compress, bool* was_compressed = nullptr)
+// Write VGM/VGZ output (legacy helper)
+static size_t writeVgmOutput(const std::string& filename, const std::vector<uint8_t>& data, bool compress, bool* was_compressed = nullptr)
 {
     std::vector<uint8_t> output_data;
     bool did_compress = false;
@@ -273,10 +365,87 @@ static size_t writeOutput(const std::string& filename, const std::vector<uint8_t
     return output_data.size();
 }
 
+// Write output in the appropriate format (FM9, VGZ, or VGM)
+// Returns bytes written, or 0 on error
+static size_t writeOutputFile(const std::string& filename,
+                               const std::vector<uint8_t>& vgm_data,
+                               const Options& opts)
+{
+    size_t bytes_written = 0;
+    const char* format_name = "VGM";
+
+    if (opts.output_format == OutputFormat::FM9)
+    {
+        FM9Writer writer;
+        writer.setVGMData(vgm_data);
+
+        // Load optional audio
+        if (!opts.audio_file.empty())
+        {
+            printf("Embedding audio: %s\n", opts.audio_file.c_str());
+            if (!writer.setAudioFile(opts.audio_file))
+            {
+                fprintf(stderr, "Error: %s\n", writer.getError().c_str());
+                return 0;
+            }
+        }
+
+        // Load optional FX
+        if (!opts.fx_file.empty())
+        {
+            printf("Embedding effects: %s\n", opts.fx_file.c_str());
+            if (!writer.setFXFile(opts.fx_file))
+            {
+                fprintf(stderr, "Error: %s\n", writer.getError().c_str());
+                return 0;
+            }
+        }
+
+        printf("Writing: %s (FM9 format, gzip compressed)\n", filename.c_str());
+        bytes_written = writer.write(filename);
+        if (bytes_written == 0)
+        {
+            fprintf(stderr, "Error: %s\n", writer.getError().c_str());
+            return 0;
+        }
+
+        format_name = "FM9";
+        printf("Success! %s size: %zu bytes", format_name, bytes_written);
+        if (writer.hasAudio())
+            printf(" (includes embedded audio)");
+        if (writer.hasFX())
+            printf(" (includes effects)");
+        printf("\n");
+    }
+    else
+    {
+        // VGZ or VGM output
+        bool compress = (opts.output_format == OutputFormat::VGZ);
+        bool was_compressed = false;
+
+        printf("Writing: %s%s\n", filename.c_str(), compress ? " (gzip compressed)" : "");
+        bytes_written = writeVgmOutput(filename, vgm_data, compress, &was_compressed);
+        if (bytes_written == 0)
+            return 0;
+
+        format_name = was_compressed ? "VGZ" : "VGM";
+        printf("Success! %s size: %zu bytes (uncompressed VGM: %zu bytes)\n",
+               format_name, bytes_written, vgm_data.size());
+    }
+
+    return bytes_written;
+}
+
 // Determine format category from extension
 static FormatCategory categorizeFormat(const std::string& filename)
 {
     std::string ext = getExtension(filename);
+
+    // VGM/VGZ input (pass-through for adding audio/fx)
+    if (ext == "vgm" || ext == "vgz" || ext == "fm9")
+    {
+        return FormatCategory::VGM_INPUT;
+    }
 
     // MIDI-style formats (need bank selection)
     if (ext == "mid" || ext == "midi" || ext == "smf" || ext == "kar" ||
@@ -312,7 +481,7 @@ static FormatCategory categorizeFormat(const std::string& filename)
 void show_usage(const char* program_name)
 {
     printf("Usage: %s [OPTIONS] <input> [output]\n\n", program_name);
-    printf("Convert game music formats to VGM for OPL2/OPL3 hardware\n\n");
+    printf("Convert game music formats to FM9/VGM for OPL2/OPL3 hardware\n\n");
 
     printf("MIDI-style formats (MIDI, RMI, XMI, MUS, HMP/HMI, KLM):\n");
     printf("  These formats use MIDI note/program messages and require\n");
@@ -329,9 +498,17 @@ void show_usage(const char* program_name)
     printf("  -s, --subsong <N>    Subsong number for AdPlug formats\n");
     printf("  -l, --length <sec>   Maximum length in seconds (default: 600)\n");
     printf("  --no-loop            Don't stop at loop point (AdPlug formats)\n");
-    printf("  --no-compress        Output .vgm instead of .vgz (gzip compressed)\n");
     printf("  --no-suffix          Don't add format suffix (_RAD, _A2M, etc) to filename\n");
     printf("  --verbose            Verbose output\n");
+    printf("\n");
+    printf("Output Format:\n");
+    printf("  --format <fmt>       Output format: fm9 (default), vgz, vgm\n");
+    printf("  --vgz                Shorthand for --format vgz\n");
+    printf("  --vgm                Shorthand for --format vgm\n");
+    printf("\n");
+    printf("FM9 Options:\n");
+    printf("  --audio <file>       Embed audio file (WAV or MP3) for playback\n");
+    printf("  --fx <file>          Embed effects JSON file for automation\n");
     printf("\n");
     printf("Info:\n");
     printf("  --list-banks         Show all available FM banks\n");
@@ -350,10 +527,10 @@ void show_usage(const char* program_name)
     printf("  -h, --help           Show this help\n");
     printf("\n");
     printf("Examples:\n");
-    printf("  %s descent.hmp                    # MIDI-style, auto-detect bank\n", program_name);
-    printf("  %s doom.mus doom.vgm --bank 16    # MIDI-style, DMX bank\n", program_name);
-    printf("  %s game.rad                       # Native RAD, embedded instruments\n", program_name);
-    printf("  %s tune.a2m tune.vgm              # Native A2M tracker\n", program_name);
+    printf("  %s descent.hmp                    # Convert to FM9 (default)\n", program_name);
+    printf("  %s doom.mus --vgz                 # Convert to VGZ format\n", program_name);
+    printf("  %s game.rad --audio drums.mp3    # FM9 with embedded audio\n", program_name);
+    printf("  %s tune.mid --fx effects.json    # FM9 with effects automation\n", program_name);
 }
 
 void show_banks()
@@ -508,9 +685,42 @@ bool parse_args(int argc, char** argv, Options& opts)
         {
             opts.loop_once = false;
         }
+        else if (arg == "--format" && i + 1 < argc)
+        {
+            std::string fmt = argv[++i];
+            std::transform(fmt.begin(), fmt.end(), fmt.begin(), ::tolower);
+            if (fmt == "fm9")
+                opts.output_format = OutputFormat::FM9;
+            else if (fmt == "vgz")
+                opts.output_format = OutputFormat::VGZ;
+            else if (fmt == "vgm")
+                opts.output_format = OutputFormat::VGM;
+            else
+            {
+                fprintf(stderr, "Error: Unknown format '%s' (use fm9, vgz, or vgm)\n", fmt.c_str());
+                return false;
+            }
+        }
+        else if (arg == "--vgz")
+        {
+            opts.output_format = OutputFormat::VGZ;
+        }
+        else if (arg == "--vgm")
+        {
+            opts.output_format = OutputFormat::VGM;
+        }
         else if (arg == "--no-compress")
         {
-            opts.compress = false;
+            // Legacy option - same as --vgm
+            opts.output_format = OutputFormat::VGM;
+        }
+        else if (arg == "--audio" && i + 1 < argc)
+        {
+            opts.audio_file = argv[++i];
+        }
+        else if (arg == "--fx" && i + 1 < argc)
+        {
+            opts.fx_file = argv[++i];
         }
         else if (arg == "--no-suffix")
         {
@@ -682,20 +892,13 @@ int convert_midi_style(const Options& opts)
            sample_count, sample_count / 44100.0);
 
     // Write output file
-    printf("Writing: %s%s\n", opts.output_file.c_str(), opts.compress ? " (gzip compressed)" : "");
-    bool was_compressed = false;
-    size_t bytes_written = writeOutput(opts.output_file, vgm_data, opts.compress, &was_compressed);
+    size_t bytes_written = writeOutputFile(opts.output_file, vgm_data, opts);
     if (bytes_written == 0)
     {
         adl_close(player);
         delete gd3_tag;
         return 3;
     }
-
-    printf("Success! %s size: %zu bytes (uncompressed VGM: %zu bytes)\n",
-           was_compressed ? "VGZ" : "VGM",
-           bytes_written,
-           vgm_data.size());
 
     adl_close(player);
     delete gd3_tag;
@@ -891,9 +1094,7 @@ int convert_native_opl(const Options& opts)
     printf("VGM size: %zu bytes\n", vgm_data.size());
 
     // Write output file
-    printf("Writing: %s%s\n", opts.output_file.c_str(), opts.compress ? " (gzip compressed)" : "");
-    bool was_compressed = false;
-    size_t bytes_written = writeOutput(opts.output_file, vgm_data, opts.compress, &was_compressed);
+    size_t bytes_written = writeOutputFile(opts.output_file, vgm_data, opts);
     if (bytes_written == 0)
     {
         delete player;
@@ -901,13 +1102,108 @@ int convert_native_opl(const Options& opts)
         return 3;
     }
 
-    printf("Success! %s size: %zu bytes (uncompressed VGM: %zu bytes)\n",
-           was_compressed ? "VGZ" : "VGM",
-           bytes_written,
-           vgm_data.size());
-
     delete player;
     delete gd3_tag;
+
+    return 0;
+}
+
+// Pass through VGM/VGZ input to FM9 (for adding audio/fx to existing VGM files)
+int convert_vgm_passthrough(const Options& opts)
+{
+    printf("Format category: VGM/VGZ pass-through\n");
+    printf("Input:  %s\n", opts.input_file.c_str());
+    printf("Output: %s\n", opts.output_file.c_str());
+
+    // Read input file
+    std::ifstream infile(opts.input_file, std::ios::binary | std::ios::ate);
+    if (!infile)
+    {
+        fprintf(stderr, "Error: Failed to open input file: %s\n", opts.input_file.c_str());
+        return 2;
+    }
+
+    std::streamsize file_size = infile.tellg();
+    infile.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> file_data(static_cast<size_t>(file_size));
+    if (!infile.read(reinterpret_cast<char*>(file_data.data()), file_size))
+    {
+        fprintf(stderr, "Error: Failed to read input file\n");
+        return 2;
+    }
+    infile.close();
+
+    printf("Read %zu bytes\n", file_data.size());
+
+    // Check if it's gzipped (VGZ)
+    std::vector<uint8_t> vgm_data;
+    bool was_compressed = false;
+
+    if (file_data.size() >= 2 && file_data[0] == 0x1f && file_data[1] == 0x8b)
+    {
+        printf("Detected gzip compression, decompressing...\n");
+        vgm_data = gzipDecompress(file_data);
+        if (vgm_data.empty())
+        {
+            fprintf(stderr, "Error: Failed to decompress VGZ file\n");
+            return 2;
+        }
+        was_compressed = true;
+        printf("Decompressed to %zu bytes\n", vgm_data.size());
+    }
+    else
+    {
+        vgm_data = std::move(file_data);
+    }
+
+    // Validate VGM header
+    if (vgm_data.size() < 64 ||
+        vgm_data[0] != 'V' || vgm_data[1] != 'g' ||
+        vgm_data[2] != 'm' || vgm_data[3] != ' ')
+    {
+        fprintf(stderr, "Error: Not a valid VGM file (missing 'Vgm ' header)\n");
+        return 2;
+    }
+
+    // Get VGM version
+    uint32_t version = vgm_data[8] | (vgm_data[9] << 8) |
+                       (vgm_data[10] << 16) | (vgm_data[11] << 24);
+    printf("VGM version: %X.%02X\n", version >> 8, version & 0xFF);
+
+    // Get total samples for duration calculation
+    uint32_t total_samples = vgm_data[0x18] | (vgm_data[0x19] << 8) |
+                             (vgm_data[0x1A] << 16) | (vgm_data[0x1B] << 24);
+    float duration = total_samples / 44100.0f;
+    printf("Duration: %.2f seconds (%u samples)\n", duration, total_samples);
+
+    // Check for existing FM9 extension and strip it if present
+    // (in case someone is re-processing an FM9 file)
+    size_t fm9_pos = 0;
+    for (size_t i = 64; i < vgm_data.size() - 4; i++)
+    {
+        if (vgm_data[i] == 'F' && vgm_data[i+1] == 'M' &&
+            vgm_data[i+2] == '9' && vgm_data[i+3] == '0')
+        {
+            fm9_pos = i;
+            break;
+        }
+    }
+
+    if (fm9_pos > 0)
+    {
+        printf("Note: Stripping existing FM9 extension at offset %zu\n", fm9_pos);
+        vgm_data.resize(fm9_pos);
+    }
+
+    printf("VGM data size: %zu bytes\n", vgm_data.size());
+
+    // Write output
+    size_t bytes_written = writeOutputFile(opts.output_file, vgm_data, opts);
+    if (bytes_written == 0)
+    {
+        return 3;
+    }
 
     return 0;
 }
@@ -968,7 +1264,9 @@ int main(int argc, char** argv)
     }
 
     // Add format suffix (e.g., _RAD) if enabled and not user-specified filename
-    if (opts.add_suffix && !user_specified_filename)
+    // Skip suffix for VGM/VGZ/FM9 input (pass-through doesn't need it)
+    FormatCategory input_category = categorizeFormat(opts.input_file);
+    if (opts.add_suffix && !user_specified_filename && input_category != FormatCategory::VGM_INPUT)
     {
         std::string suffix = getExtensionUpper(opts.input_file);
         if (!suffix.empty())
@@ -977,10 +1275,36 @@ int main(int argc, char** argv)
         }
     }
 
-    // Add extension based on compression setting
+    // Add extension based on output format
     if (!user_specified_filename)
     {
-        opts.output_file += opts.compress ? ".vgz" : ".vgm";
+        switch (opts.output_format)
+        {
+        case OutputFormat::FM9:
+            opts.output_file += ".fm9";
+            break;
+        case OutputFormat::VGZ:
+            opts.output_file += ".vgz";
+            break;
+        case OutputFormat::VGM:
+            opts.output_file += ".vgm";
+            break;
+        }
+    }
+
+    // Warn if audio/fx specified with non-FM9 format
+    if (opts.output_format != OutputFormat::FM9)
+    {
+        if (!opts.audio_file.empty())
+        {
+            fprintf(stderr, "Warning: --audio ignored (only supported with FM9 format)\n");
+            opts.audio_file.clear();
+        }
+        if (!opts.fx_file.empty())
+        {
+            fprintf(stderr, "Warning: --fx ignored (only supported with FM9 format)\n");
+            opts.fx_file.clear();
+        }
     }
 
     // Determine format category
@@ -988,6 +1312,9 @@ int main(int argc, char** argv)
 
     switch (category)
     {
+    case FormatCategory::VGM_INPUT:
+        return convert_vgm_passthrough(opts);
+
     case FormatCategory::MIDI_STYLE:
         return convert_midi_style(opts);
 

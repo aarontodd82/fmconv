@@ -38,6 +38,7 @@ add_executable(fmconv
     src/detection/bank_detector.cpp
     src/formats/hmp_to_midi.cpp
     src/adplug_vgm/vgm_opl.cpp
+    src/fm9_writer/fm9_writer.cpp
     src/miniz.c
     src/miniz_tdef.c
     src/miniz_tinfl.c
