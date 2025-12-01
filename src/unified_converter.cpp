@@ -89,6 +89,8 @@ struct Options
     // FM9 options
     std::string audio_file;     // Optional audio file (WAV/MP3)
     std::string fx_file;        // Optional effects JSON file
+    std::string image_file;     // Optional cover image (PNG/JPEG/GIF)
+    bool dither_image = true;   // Apply dithering to cover image
 
     // GD3 metadata
     std::string title;
@@ -401,6 +403,18 @@ static size_t writeOutputFile(const std::string& filename,
             }
         }
 
+        // Load optional image
+        if (!opts.image_file.empty())
+        {
+            printf("Embedding cover image: %s%s\n", opts.image_file.c_str(),
+                   opts.dither_image ? " (with dithering)" : " (no dither)");
+            if (!writer.setImageFile(opts.image_file, opts.dither_image))
+            {
+                fprintf(stderr, "Error: %s\n", writer.getError().c_str());
+                return 0;
+            }
+        }
+
         printf("Writing: %s (FM9 format, gzip compressed)\n", filename.c_str());
         bytes_written = writer.write(filename);
         if (bytes_written == 0)
@@ -415,6 +429,8 @@ static size_t writeOutputFile(const std::string& filename,
             printf(" (includes embedded audio)");
         if (writer.hasFX())
             printf(" (includes effects)");
+        if (writer.hasImage())
+            printf(" (includes cover image)");
         printf("\n");
     }
     else
@@ -509,6 +525,8 @@ void show_usage(const char* program_name)
     printf("FM9 Options:\n");
     printf("  --audio <file>       Embed audio file (WAV or MP3) for playback\n");
     printf("  --fx <file>          Embed effects JSON file for automation\n");
+    printf("  --image <file>       Embed cover image (PNG, JPEG, or GIF)\n");
+    printf("  --no-dither          Disable dithering on cover image (clean output)\n");
     printf("\n");
     printf("Info:\n");
     printf("  --list-banks         Show all available FM banks\n");
@@ -721,6 +739,14 @@ bool parse_args(int argc, char** argv, Options& opts)
         else if (arg == "--fx" && i + 1 < argc)
         {
             opts.fx_file = argv[++i];
+        }
+        else if (arg == "--image" && i + 1 < argc)
+        {
+            opts.image_file = argv[++i];
+        }
+        else if (arg == "--no-dither")
+        {
+            opts.dither_image = false;
         }
         else if (arg == "--no-suffix")
         {
@@ -1304,6 +1330,11 @@ int main(int argc, char** argv)
         {
             fprintf(stderr, "Warning: --fx ignored (only supported with FM9 format)\n");
             opts.fx_file.clear();
+        }
+        if (!opts.image_file.empty())
+        {
+            fprintf(stderr, "Warning: --image ignored (only supported with FM9 format)\n");
+            opts.image_file.clear();
         }
     }
 

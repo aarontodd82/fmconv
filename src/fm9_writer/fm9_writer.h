@@ -31,6 +31,12 @@ struct FM9Header {
 // Flag bits
 constexpr uint8_t FM9_FLAG_HAS_AUDIO = 0x01;
 constexpr uint8_t FM9_FLAG_HAS_FX    = 0x02;
+constexpr uint8_t FM9_FLAG_HAS_IMAGE = 0x04;
+
+// Cover image constants
+constexpr uint32_t FM9_IMAGE_WIDTH  = 100;
+constexpr uint32_t FM9_IMAGE_HEIGHT = 100;
+constexpr uint32_t FM9_IMAGE_SIZE   = FM9_IMAGE_WIDTH * FM9_IMAGE_HEIGHT * 2;  // 20000 bytes (RGB565)
 
 // Audio format values
 constexpr uint8_t FM9_AUDIO_NONE = 0;
@@ -53,6 +59,11 @@ public:
     // Returns false if file cannot be loaded
     bool setFXFile(const std::string& path);
 
+    // Set optional cover image (PNG, JPEG, or GIF)
+    // Image will be scaled to 100x100 and converted to RGB565
+    // Returns false if file cannot be loaded or processed
+    bool setImageFile(const std::string& path, bool dither = true);
+
     // Write complete FM9 file (always gzip compressed)
     // Returns bytes written, or 0 on error
     size_t write(const std::string& output_path);
@@ -60,14 +71,16 @@ public:
     // Get last error message
     const std::string& getError() const { return error_; }
 
-    // Check if audio/fx were set
+    // Check if audio/fx/image were set
     bool hasAudio() const { return !audio_data_.empty(); }
     bool hasFX() const { return !fx_data_.empty(); }
+    bool hasImage() const { return !image_data_.empty(); }
 
 private:
     std::vector<uint8_t> vgm_data_;
     std::vector<uint8_t> audio_data_;
     std::vector<uint8_t> fx_data_;
+    std::vector<uint8_t> image_data_;  // 100x100 RGB565 (20000 bytes when set)
     uint8_t audio_format_ = FM9_AUDIO_NONE;
     std::string error_;
 
@@ -79,6 +92,13 @@ private:
 
     // Build the FM9 header
     FM9Header buildHeader() const;
+
+    // Image processing helpers
+    bool processImage(const uint8_t* pixels, int width, int height, bool dither);
+    void scaleImage(const uint8_t* src, int src_w, int src_h,
+                    uint8_t* dst, int dst_w, int dst_h, int dst_x, int dst_y);
+    void applyDithering(uint8_t* pixels, int width, int height);
+    uint16_t rgb888ToRgb565(uint8_t r, uint8_t g, uint8_t b);
 };
 
 #endif // FM9_WRITER_H
