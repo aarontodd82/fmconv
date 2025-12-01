@@ -1,13 +1,14 @@
 # fmconv - FM9 Converter for FM-90s
 
-Convert retro game music to FM9 format for playback on the [FM-90s](https://github.com/aarontodd82/FM-90s) hardware OPL3 chip player.
+Convert retro game music to FM9 format for playback on [FM-90s](https://github.com/aarontodd82/FM-90s), a chiptune player with hardware YMF262 (OPL2/OPL3), YM2612 (Genesis/Mega Drive), and SN76489 (PSG) chips, plus software emulation of SNES, Game Boy, and NES sound.
 
 ## Overview
 
 fmconv converts **50+ audio formats** from classic DOS games to FM9, an extended VGM format that supports:
 
-- **OPL2/OPL3 FM synthesis** - Authentic hardware playback via YMF262 chip
+- **FM synthesis** - Hardware playback via OPL2/OPL3 or Genesis chips
 - **Embedded PCM audio** - Layer WAV or MP3 audio alongside FM synthesis
+- **Cover art** - Embed album/game artwork for display
 - **Effects automation** - JSON-based timeline for reverb, delay, chorus, and EQ
 
 The converter uses two engines:
@@ -132,6 +133,8 @@ These formats have **embedded FM instruments** - bank selection is not needed:
 |--------|-------------|
 | `--audio <file>` | Embed WAV or MP3 audio file for PCM playback alongside FM |
 | `--fx <file>` | Embed effects automation JSON file |
+| `--image <file>` | Embed cover image (PNG, JPEG, or GIF) for display on FM-90s |
+| `--no-dither` | Disable retro styling on cover image |
 
 ### MIDI-Style Format Options
 
@@ -303,11 +306,12 @@ For MIDI-style formats, the instrument bank determines how every instrument soun
 FM9 is an extended VGM format designed for the FM-90s hardware player:
 
 ```
-[GZIP: VGM + FM9 Header + FX JSON] + [RAW: Audio data]
+[GZIP: VGM + FM9 Header + FX JSON] + [RAW: Audio data] + [RAW: Cover image]
 ```
 
 - VGM data and metadata are gzip compressed for efficient storage
 - Audio data (WAV/MP3) is stored uncompressed after the gzip section for streaming playback
+- Cover images are scaled to 100x100 and stored as RGB565 (20KB) for direct display
 - Standard VGM players ignore the FM9 extension (they stop at the `0x66` end command)
 
 ### Conversion
@@ -318,7 +322,7 @@ FM9 is an extended VGM format designed for the FM-90s hardware player:
 
 ## Examples
 
-### FM9 with Embedded Audio
+### FM9 with Embedded Audio and Cover Art
 
 ```bash
 # Convert tracker with PCM drums
@@ -327,8 +331,11 @@ fmconv chiptune.rad --audio drums.wav
 # Add MP3 audio to existing VGM
 fmconv existing.vgz --audio vocals.mp3
 
-# Full production with effects
-fmconv song.mid --audio backing.wav --fx effects.json
+# Add cover art
+fmconv song.mid --image cover.jpg
+
+# Full production with audio, effects, and cover art
+fmconv song.mid --audio backing.wav --fx effects.json --image album.png
 ```
 
 ### Basic Conversion
