@@ -201,13 +201,17 @@ FM9Header FM9Writer::buildHeader() const {
     header.audio_format = audio_format_;
     header.reserved = 0;
 
-    // Offsets are from start of FM9 header
-    // Header is 24 bytes, audio comes next, then FX
-    header.audio_offset = sizeof(FM9Header);
-    header.audio_size = static_cast<uint32_t>(audio_data_.size());
-
-    header.fx_offset = header.audio_offset + header.audio_size;
+    // Offsets are from start of FM9 header (within decompressed data)
+    // FX data is in the compressed section, right after the header
+    // Audio is OUTSIDE the compressed section (appended raw after gzip)
+    header.fx_offset = sizeof(FM9Header);
     header.fx_size = static_cast<uint32_t>(fx_data_.size());
+
+    // Audio offset is special: it indicates audio exists but actual data
+    // is after the gzip section. We store the size here so Teensy knows
+    // how much to copy. The actual file offset = gzip_size (determined at runtime)
+    header.audio_offset = 0;  // Not used for seeking (audio is after gzip)
+    header.audio_size = static_cast<uint32_t>(audio_data_.size());
 
     return header;
 }
@@ -218,32 +222,27 @@ size_t FM9Writer::write(const std::string& output_path) {
         return 0;
     }
 
-    // Build uncompressed FM9 file:
-    // [VGM data] + [FM9 Header] + [Audio data] + [FX data]
-    std::vector<uint8_t> fm9_data;
-    fm9_data.reserve(vgm_data_.size() + sizeof(FM9Header) +
-                     audio_data_.size() + fx_data_.size());
+    // Build the COMPRESSED portion:
+    // [VGM data] + [FM9 Header] + [FX data]
+    // Audio is appended UNCOMPRESSED after the gzip data
+    std::vector<uint8_t> compressed_portion;
+    compressed_portion.reserve(vgm_data_.size() + sizeof(FM9Header) + fx_data_.size());
 
     // VGM data first
-    fm9_data.insert(fm9_data.end(), vgm_data_.begin(), vgm_data_.end());
+    compressed_portion.insert(compressed_portion.end(), vgm_data_.begin(), vgm_data_.end());
 
     // FM9 header
     FM9Header header = buildHeader();
     const uint8_t* header_bytes = reinterpret_cast<const uint8_t*>(&header);
-    fm9_data.insert(fm9_data.end(), header_bytes, header_bytes + sizeof(FM9Header));
+    compressed_portion.insert(compressed_portion.end(), header_bytes, header_bytes + sizeof(FM9Header));
 
-    // Audio data (if any)
-    if (!audio_data_.empty()) {
-        fm9_data.insert(fm9_data.end(), audio_data_.begin(), audio_data_.end());
-    }
-
-    // FX data (if any)
+    // FX data (if any) - goes in compressed section
     if (!fx_data_.empty()) {
-        fm9_data.insert(fm9_data.end(), fx_data_.begin(), fx_data_.end());
+        compressed_portion.insert(compressed_portion.end(), fx_data_.begin(), fx_data_.end());
     }
 
-    // Gzip compress
-    std::vector<uint8_t> compressed = gzipCompress(fm9_data);
+    // Gzip compress the VGM + header + FX
+    std::vector<uint8_t> compressed = gzipCompress(compressed_portion);
     if (compressed.empty()) {
         error_ = "Gzip compression failed";
         return 0;
@@ -256,8 +255,15 @@ size_t FM9Writer::write(const std::string& output_path) {
         return 0;
     }
 
+    // Write compressed portion (VGM + FM9 header + FX)
     out.write(reinterpret_cast<const char*>(compressed.data()), compressed.size());
+
+    // Append raw audio data AFTER the gzip section (uncompressed)
+    if (!audio_data_.empty()) {
+        out.write(reinterpret_cast<const char*>(audio_data_.data()), audio_data_.size());
+    }
+
     out.close();
 
-    return compressed.size();
+    return compressed.size() + audio_data_.size();
 }

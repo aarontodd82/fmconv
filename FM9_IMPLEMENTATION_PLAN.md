@@ -2,13 +2,14 @@
 
 ## Overview
 
-FM9 is an extended VGM format designed for the Teensy OPL3 player. It bundles standard VGM data with optional embedded audio (WAV/MP3) and real-time effects automation. FM9 files are always gzip compressed.
+FM9 is an extended VGM format designed for the Teensy OPL3 player. It bundles standard VGM data with optional embedded audio (WAV/MP3) and real-time effects automation.
 
 **Goals:**
 - Default output format for fmconv
 - Backwards compatible structure (VGM data remains parseable)
 - Minimal changes to existing Teensy VGM player
 - Optional audio and FX - FM9 without extras is just a renamed VGZ
+- **Streamable audio** - Audio data is NOT compressed, allowing Teensy to stream-copy directly to temp file without needing RAM for decompression
 
 ---
 
@@ -23,14 +24,23 @@ FM9 is an extended VGM format designed for the Teensy OPL3 player. It bundles st
 │  ├───────────────────────────────┤  │
 │  │  FM9 Extension Header         │  │
 │  ├───────────────────────────────┤  │
-│  │  Audio Chunk (optional)       │  │
-│  │  (WAV or MP3 data)            │  │
-│  ├───────────────────────────────┤  │
 │  │  FX Chunk (optional)          │  │
 │  │  (JSON effects timeline)      │  │
 │  └───────────────────────────────┘  │
+├─────────────────────────────────────┤
+│       UNCOMPRESSED (raw)            │
+│  ┌───────────────────────────────┐  │
+│  │  Audio Chunk (optional)       │  │
+│  │  (WAV or MP3 data)            │  │
+│  └───────────────────────────────┘  │
 └─────────────────────────────────────┘
 ```
+
+**Important:** The audio chunk is stored AFTER the gzip-compressed section, uncompressed. This allows the Teensy to:
+1. Stream-decompress the VGM data (same as existing VGZ playback - no full RAM load needed)
+2. Stream-copy the audio directly from SD to a temp file without decompression
+
+The VGM portion is played using the existing streaming gzip decompression - the FM9 header and FX data are encountered during streaming and parsed as they flow through.
 
 The FM9 extension data appears after the GD3 tag (or after VGM data if no GD3). Standard VGM players will ignore it since they stop at the `0x66` end command.
 
@@ -242,51 +252,65 @@ src/
 
 ### Implementation Tasks
 
-#### 1. FM9 File Parser
-**Files:** `src/fm9_file.h`, `src/fm9_file.cpp`
+#### 1. FM9 File Handling
+
+FM9 files use the same streaming gzip decompression as VGZ files - no full file load to RAM.
+
+**Key insight:** The FM9 header and FX data appear AFTER the VGM `0x66` end command in the decompressed stream. During streaming playback:
+1. VGM commands are processed normally until `0x66` (end of music)
+2. After `0x66`, the FM9 header ("FM90" magic) is encountered
+3. FX JSON follows the header (small, can be buffered)
+4. Audio data is OUTSIDE the gzip stream - raw bytes appended after gzip section
+
+**For audio extraction:** Before playback begins, scan the FM9 file to find where the gzip section ends (look for valid gzip trailer or use zlib's stream end), then copy raw bytes from that offset to a temp file.
 
 ```cpp
 struct FM9Header {
-    char magic[4];
-    uint8_t version;
-    uint8_t flags;
-    uint8_t audio_format;
+    char magic[4];            // "FM90"
+    uint8_t version;          // Format version (1)
+    uint8_t flags;            // Bit flags
+    uint8_t audio_format;     // 0=none, 1=WAV, 2=MP3
     uint8_t reserved;
-    uint32_t audio_offset;
-    uint32_t audio_size;
-    uint32_t fx_offset;
-    uint32_t fx_size;
+    uint32_t audio_offset;    // Not used (audio is after gzip)
+    uint32_t audio_size;      // Size of audio data in bytes
+    uint32_t fx_offset;       // Offset from FM9 header to FX data
+    uint32_t fx_size;         // Size of FX JSON in bytes
 };
 
-class FM9File {
+// FM9 extends the existing VGM streaming player
+// Most functionality is inherited - just need to:
+// 1. Detect FM9 header after VGM end command during streaming
+// 2. Parse FX events from small JSON buffer
+// 3. Extract audio to temp file before playback starts
+
+class FM9StreamParser {
 public:
-    bool load(const char* path);
+    // Called during streaming decompression when data arrives after 0x66
+    void onPostVGMData(const uint8_t* data, size_t len);
 
-    // Access VGM portion (for existing VGM player)
-    const uint8_t* getVGMData() const;
-    size_t getVGMSize() const;
+    // Check if we've found the FM9 header
+    bool hasFM9Extension() const { return found_fm9_header_; }
 
-    // FM9 extensions
+    // FM9 extensions (valid after header found)
     bool hasAudio() const;
     bool hasFX() const;
-    uint8_t getAudioFormat() const;  // 0=none, 1=WAV, 2=MP3
+    uint8_t getAudioFormat() const;
+    uint32_t getAudioSize() const;
 
-    // Extract audio to temp file for playback
-    bool extractAudioToFile(const char* temp_path);
-
-    // Get FX JSON string
+    // FX data (buffered during streaming)
     const char* getFXJson() const;
     size_t getFXJsonSize() const;
 
 private:
-    std::vector<uint8_t> decompressed_data_;
     FM9Header fm9_header_;
-    size_t vgm_end_offset_;      // Where VGM data ends
-    size_t fm9_header_offset_;   // Where FM9 header starts
-    bool has_fm9_extension_ = false;
-
-    bool findFM9Header();
+    std::vector<char> fx_buffer_;  // Small - just the JSON
+    bool found_fm9_header_ = false;
+    size_t bytes_after_vgm_ = 0;
 };
+
+// Audio extraction (called before playback)
+// Finds end of gzip section and copies raw audio to temp file
+bool extractFM9Audio(const char* fm9_path, const char* temp_audio_path, uint32_t audio_size);
 ```
 
 #### 2. FX Engine
