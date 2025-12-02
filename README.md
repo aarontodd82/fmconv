@@ -356,6 +356,25 @@ FM9 is an extended VGM format designed for the FM-90s hardware player:
 - Audio data (WAV/MP3) is stored uncompressed after the gzip section for streaming playback
 - Cover images are scaled to 100x100 and stored as RGB565 (20KB) for direct display
 - Standard VGM players ignore the FM9 extension (they stop at the `0x66` end command)
+- Source format metadata identifies the original file type (MOD, S3M, RAD, MID, etc.)
+
+See [docs/FM9_FORMAT.md](docs/FM9_FORMAT.md) for complete format specification.
+
+### FM9 Extraction Tool
+
+Extract and inspect FM9 files with the included Python tool:
+
+```bash
+python tools/fm9_extract.py music.fm9
+```
+
+Extracts:
+- VGM data (uncompressed)
+- Embedded audio (WAV/MP3)
+- Cover image (converted to PNG)
+- Info text file with all metadata, chip info, and duration
+
+See [docs/FM9_EXTRACT.md](docs/FM9_EXTRACT.md) for full documentation.
 
 ### Conversion
 
@@ -454,6 +473,21 @@ fmconv doom_e1m1.mus \
     --album "DOOM" \
     --system "IBM PC" \
     --date "1993"
+```
+
+### Modifying Existing VGM/FM9 Metadata
+
+When processing VGM/VGZ/FM9 files, existing GD3 metadata is preserved. CLI options selectively override individual fields:
+
+```bash
+# Change only the title, keep existing author/album/etc
+fmconv existing.vgm --title "New Title"
+
+# Override multiple fields
+fmconv existing.vgz --title "New Title" --author "New Author"
+
+# Add metadata to VGM that has none
+fmconv bare.vgm --title "Song Name" --author "Composer"
 ```
 
 ### Batch Conversion
