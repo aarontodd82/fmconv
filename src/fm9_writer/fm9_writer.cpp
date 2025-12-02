@@ -168,6 +168,11 @@ bool FM9Writer::setAudioFile(const std::string& path) {
     return true;
 }
 
+void FM9Writer::setAudioData(const std::vector<uint8_t>& data, uint8_t format) {
+    audio_data_ = data;
+    audio_format_ = format;
+}
+
 bool FM9Writer::setFXFile(const std::string& path) {
     if (!loadFile(path, fx_data_)) {
         return false;

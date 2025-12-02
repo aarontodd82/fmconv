@@ -11,17 +11,29 @@ fmconv converts **50+ audio formats** from classic DOS games to FM9, an extended
 - **Cover art** - Embed album/game artwork for display
 - **Effects automation** - JSON-based timeline for reverb, delay, chorus, and EQ
 
-The converter uses two engines:
+The converter uses three engines:
 1. **libADLMIDI** - MIDI-style formats (MIDI, XMI, MUS, HMP/HMI) with 79 selectable FM instrument banks
 2. **AdPlug** - Native OPL tracker formats (RAD, IMF, DRO, etc.) with embedded instruments
+3. **OpenMPT** - Tracker formats (S3M, MOD, XM, IT, etc.) with hybrid OPL+sample support
 
 VGM and VGZ output is also supported for use with other players.
+
+### S3M Hybrid Support
+
+S3M files can contain both OPL FM instruments and PCM samples in the same song. fmconv handles this by:
+- Capturing OPL register writes for hardware playback
+- Rendering sample instruments to audio embedded in the FM9 file
+
+The FM-90s player then plays both simultaneously - real OPL3 hardware for the FM parts alongside the sample audio. Sample-only tracker files (MOD, XM, IT, etc.) are also supported and output as FM9 with embedded audio.
 
 ## Quick Start
 
 ```bash
 # Convert to FM9 (default)
 fmconv game_music.mid
+
+# Convert S3M with OPL+samples (auto-detects hybrid content)
+fmconv hybrid_track.s3m
 
 # Add PCM audio track alongside FM
 fmconv chiptune.rad --audio drums.wav
@@ -106,6 +118,37 @@ These formats have **embedded FM instruments** - bank selection is not needed:
 | `.xsm` | eXtra Simple Music | Tracker music |
 | `.m` | Ultima 6 Music | Ultima 6 |
 | `.mus`, `.mdy`, `.ims` | AdLib MIDI/IMS | Various |
+
+### Tracker Formats (OpenMPT)
+
+These formats are handled by OpenMPT for accurate playback. S3M can contain OPL instruments; others are sample-based:
+
+| Extension | Format | OPL Support |
+|-----------|--------|-------------|
+| `.s3m` | Scream Tracker 3 | Yes (hybrid OPL+samples) |
+| `.mod` | ProTracker | No (samples only) |
+| `.xm` | FastTracker 2 | No (samples only) |
+| `.it` | Impulse Tracker | No (samples only) |
+| `.mptm` | OpenMPT Module | Yes |
+| `.stm` | Scream Tracker 2 | No |
+| `.669` | Composer 669 | No |
+| `.mtm` | MultiTracker | No |
+| `.med` | OctaMED | No |
+| `.okt` | Oktalyzer | No |
+| `.far` | Farandole Composer | No |
+| `.mdl` | Digitrakker | No |
+| `.ams` | Extreme's Tracker / Velvet Studio | No |
+| `.dbm` | DigiBooster Pro | No |
+| `.digi` | DigiBooster | No |
+| `.dmf` | X-Tracker | No |
+| `.dsm` | DSIK Format | No |
+| `.umx` | Unreal Music | No |
+| `.mt2` | MadTracker 2 | No |
+| `.psm` | Epic Megagames MASI | No |
+| `.j2b` | Jazz Jackrabbit 2 | No |
+| `.mo3` | MO3 Compressed | No |
+
+Plus 40+ additional formats. Use `--list-formats` for the complete list.
 
 ## Command-Line Options
 
@@ -389,6 +432,18 @@ fmconv long_song.rad --length 180
 fmconv looping.rad --no-loop --length 300
 ```
 
+### Tracker Conversion (OpenMPT)
+
+```bash
+# S3M with OPL + samples - OPL plays on hardware, samples embedded as audio
+fmconv hybrid_track.s3m
+
+# Sample-only tracker - rendered to embedded audio
+fmconv demo.xm
+fmconv music.it
+fmconv track.mod
+```
+
 ### Adding Metadata
 
 ```bash
@@ -480,9 +535,12 @@ cmake -B build -DBUILD_ADPLUG=OFF
 
 ## Credits
 
-- **libADLMIDI** by Vitaly Novichkov (Wohlstand) - MIDI synthesis
-- **AdPlug** by Simon Peter et al. - Native format playback
+- **libADLMIDI** by Vitaly Novichkov (Wohlstand) - MIDI to OPL synthesis
+- **AdPlug** by Simon Peter et al. - Native OPL format playback
 - **libbinio** - Binary I/O library for AdPlug
+- **OpenMPT** by OpenMPT Project Developers - Tracker format playback
+- **miniz** by Rich Geldreich - Compression
+- **stb_image** by Sean Barrett - Image loading
 - FM instrument banks from various contributors
 
 ## License
@@ -491,5 +549,8 @@ This tool combines multiple open-source libraries:
 - libADLMIDI: LGPLv2.1+
 - AdPlug: LGPLv2.1
 - libbinio: LGPLv2.1+
+- OpenMPT/libopenmpt: BSD-3-Clause
+- miniz: MIT
+- stb_image: Public Domain / MIT
 
 See individual library directories for full license terms.

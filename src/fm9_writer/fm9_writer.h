@@ -55,6 +55,10 @@ public:
     // Returns false if file cannot be loaded or format not recognized
     bool setAudioFile(const std::string& path);
 
+    // Set audio data directly (for programmatically generated audio)
+    // Format: FM9_AUDIO_WAV or FM9_AUDIO_MP3
+    void setAudioData(const std::vector<uint8_t>& data, uint8_t format);
+
     // Set optional FX file (JSON)
     // Returns false if file cannot be loaded
     bool setFXFile(const std::string& path);

@@ -47,11 +47,17 @@
 #include "formats/hmp_to_midi.h"
 #include "fm9_writer/fm9_writer.h"
 
+// OpenMPT for tracker formats (optional)
+#ifdef HAVE_OPENMPT
+#include "openmpt/openmpt_export.h"
+#endif
+
 // Format categories
 enum class FormatCategory
 {
     MIDI_STYLE,     // Use libADLMIDI (needs bank)
     NATIVE_OPL,     // Use AdPlug (embedded instruments)
+    TRACKER_FORMAT, // Use OpenMPT (S3M/MOD/XM/IT with OPL and/or samples)
     VGM_INPUT,      // Already VGM/VGZ - pass through (for adding audio/fx to FM9)
     UNKNOWN
 };
@@ -471,25 +477,58 @@ static FormatCategory categorizeFormat(const std::string& filename)
         return FormatCategory::MIDI_STYLE;
     }
 
+    // Tracker formats - use OpenMPT if available for accurate playback
+    // OpenMPT supports 60+ tracker formats including those with OPL instruments
+#ifdef HAVE_OPENMPT
+    if (ext == "s3m" || ext == "mod" || ext == "xm" || ext == "it" ||
+        ext == "mptm" || ext == "stm" || ext == "669" || ext == "667" ||
+        ext == "mtm" || ext == "med" || ext == "okt" || ext == "far" ||
+        ext == "mdl" || ext == "ams" || ext == "dbm" || ext == "digi" ||
+        ext == "dmf" || ext == "dsm" || ext == "dsym" || ext == "dtm" ||
+        ext == "amf" || ext == "psm" || ext == "mt2" || ext == "umx" ||
+        ext == "j2b" || ext == "ptm" || ext == "sfx" || ext == "sfx2" ||
+        ext == "nst" || ext == "wow" || ext == "ult" || ext == "gdm" ||
+        ext == "mo3" || ext == "oxm" || ext == "plm" || ext == "ppm" ||
+        ext == "stx" || ext == "stp" || ext == "rtm" || ext == "pt36" ||
+        ext == "ice" || ext == "mmcmp" || ext == "xpk" || ext == "mms" ||
+        ext == "c67" || ext == "m15" || ext == "stk" || ext == "st26" ||
+        ext == "unic" || ext == "cba" || ext == "etx" || ext == "fc" ||
+        ext == "fc13" || ext == "fc14" || ext == "fmt" || ext == "fst" ||
+        ext == "ftm" || ext == "gmc" || ext == "gtk" || ext == "gt2" ||
+        ext == "puma" || ext == "smod" || ext == "symmod" || ext == "tcb" ||
+        ext == "xmf")
+    {
+        return FormatCategory::TRACKER_FORMAT;
+    }
+#endif
+
     // Native OPL formats (embedded instruments)
-    // This covers all AdPlug-supported formats
+    // This covers AdPlug-supported formats (excluding those handled by OpenMPT above)
     if (ext == "a2m" || ext == "a2t" || ext == "adl" || ext == "adlib" ||
         ext == "amd" || ext == "bam" || ext == "bmf" || ext == "cff" ||
         ext == "cmf" || ext == "d00" || ext == "dfm" || ext == "dmo" ||
-        ext == "dro" || ext == "dtm" || ext == "got" || ext == "ha2" ||
-        ext == "hsc" || ext == "hsp" || ext == "hsq" || ext == "imf" ||
-        ext == "ims" || ext == "jbm" || ext == "ksm" || ext == "laa" ||
+        ext == "dro" || ext == "got" || ext == "ha2" ||
+        ext == "hsc" || ext == "hsp" || ext == "hsq" ||
+        ext == "jbm" || ext == "ksm" || ext == "laa" ||
         ext == "lds" || ext == "m" || ext == "mad" || ext == "mdi" ||
         ext == "mdy" || ext == "mkf" || ext == "mkj" || ext == "msc" ||
-        ext == "mtk" || ext == "mtr" || ext == "mus" || ext == "pis" ||
+        ext == "mtk" || ext == "mtr" || ext == "pis" ||
         ext == "plx" || ext == "rac" || ext == "rad" || ext == "raw" ||
-        ext == "rix" || ext == "rol" || ext == "s3m" || ext == "sa2" ||
+        ext == "rix" || ext == "rol" || ext == "sa2" ||
         ext == "sat" || ext == "sci" || ext == "sdb" || ext == "sng" ||
         ext == "sop" || ext == "sqx" || ext == "wlf" || ext == "xad" ||
         ext == "xms" || ext == "xsm" || ext == "agd")
     {
         return FormatCategory::NATIVE_OPL;
     }
+
+    // Formats supported by both AdPlug and OpenMPT - use AdPlug when OpenMPT not available
+#ifndef HAVE_OPENMPT
+    if (ext == "s3m" || ext == "imf" || ext == "ims" || ext == "dtm")
+    {
+        return FormatCategory::NATIVE_OPL;
+    }
+#endif
 
     return FormatCategory::UNKNOWN;
 }
@@ -1234,6 +1273,310 @@ int convert_vgm_passthrough(const Options& opts)
     return 0;
 }
 
+#ifdef HAVE_OPENMPT
+// Convert using OpenMPT (tracker formats with OPL and/or samples)
+int convert_openmpt(const Options& opts)
+{
+    printf("Format category: Tracker (using OpenMPT)\n");
+    printf("Input:  %s\n", opts.input_file.c_str());
+    printf("Output: %s\n", opts.output_file.c_str());
+
+    // Create context
+    openmpt_export_context* ctx = openmpt_export_create();
+    if (!ctx)
+    {
+        fprintf(stderr, "Error: Failed to create OpenMPT context\n");
+        return 2;
+    }
+
+    // Load file
+    printf("Loading with OpenMPT...\n");
+    if (!openmpt_export_load(ctx, opts.input_file.c_str()))
+    {
+        fprintf(stderr, "Error: %s\n", openmpt_export_get_error(ctx));
+        openmpt_export_destroy(ctx);
+        return 2;
+    }
+
+    // Get file info
+    const char* title = openmpt_export_get_title(ctx);
+    const char* format = openmpt_export_get_format(ctx);
+    bool has_opl = openmpt_export_has_opl(ctx) != 0;
+    bool has_samples = openmpt_export_has_samples(ctx) != 0;
+
+    printf("Format: %s\n", format);
+    if (title && title[0])
+        printf("Title:  %s\n", title);
+    printf("Contains: %s%s%s\n",
+           has_opl ? "OPL instruments" : "",
+           (has_opl && has_samples) ? " + " : "",
+           has_samples ? "Sample instruments" : "");
+
+    if (!has_opl && !has_samples)
+    {
+        fprintf(stderr, "Error: File contains no playable instruments\n");
+        openmpt_export_destroy(ctx);
+        return 2;
+    }
+
+    std::vector<uint8_t> vgm_data;
+    std::vector<int16_t> pcm_data;
+    uint32_t sample_rate = 44100;
+
+    // Render OPL if present
+    if (has_opl)
+    {
+        printf("Rendering OPL instruments to VGM...\n");
+        if (!openmpt_export_render_opl(ctx, sample_rate, opts.max_length_sec))
+        {
+            fprintf(stderr, "Error: %s\n", openmpt_export_get_error(ctx));
+            openmpt_export_destroy(ctx);
+            return 2;
+        }
+
+        size_t vgm_size = 0;
+        const uint8_t* vgm_ptr = openmpt_export_get_vgm_data(ctx, &vgm_size);
+        if (vgm_ptr && vgm_size > 0)
+        {
+            vgm_data.assign(vgm_ptr, vgm_ptr + vgm_size);
+            printf("OPL rendered: %zu bytes VGM\n", vgm_size);
+        }
+    }
+
+    // Render samples if present (reload context for clean render)
+    if (has_samples)
+    {
+        // Need to reload for sample-only render
+        openmpt_export_context* sample_ctx = openmpt_export_create();
+        if (sample_ctx && openmpt_export_load(sample_ctx, opts.input_file.c_str()))
+        {
+            printf("Rendering sample instruments to PCM...\n");
+            if (openmpt_export_render_samples(sample_ctx, sample_rate, opts.max_length_sec))
+            {
+                size_t pcm_size = 0;
+                const int16_t* pcm_ptr = openmpt_export_get_pcm_data(sample_ctx, &pcm_size);
+                if (pcm_ptr && pcm_size > 0)
+                {
+                    pcm_data.assign(pcm_ptr, pcm_ptr + pcm_size);
+                    printf("Samples rendered: %zu samples (%.2f seconds)\n",
+                           pcm_size / 2, (pcm_size / 2) / (float)sample_rate);
+                }
+            }
+        }
+        if (sample_ctx)
+            openmpt_export_destroy(sample_ctx);
+    }
+
+    openmpt_export_destroy(ctx);
+
+    // Handle output based on what we have
+    if (vgm_data.empty() && pcm_data.empty())
+    {
+        fprintf(stderr, "Error: No audio data generated\n");
+        return 2;
+    }
+
+    // If we only have samples (no OPL), handle based on output format
+    if (vgm_data.empty() && !pcm_data.empty())
+    {
+        // For VGM/VGZ output, there's nothing useful to output
+        if (opts.output_format != OutputFormat::FM9)
+        {
+            fprintf(stderr, "Error: This file contains only sample-based instruments (no OPL).\n");
+            fprintf(stderr, "       VGM/VGZ output requires OPL content. Use FM9 format instead:\n");
+            fprintf(stderr, "         fmconv \"%s\" --format fm9\n", opts.input_file.c_str());
+            return 2;
+        }
+
+        // For FM9, create a minimal timing-only VGM for sample sync
+        printf("No OPL instruments - creating timing-only VGM for sample sync\n");
+
+        // Calculate total samples from PCM data (stereo, so divide by 2)
+        uint32_t total_samples = static_cast<uint32_t>(pcm_data.size() / 2);
+
+        // Create minimal VGM: header + wait commands + end
+        vgm_data.resize(256, 0);  // 256-byte header
+
+        // VGM magic "Vgm "
+        vgm_data[0] = 'V'; vgm_data[1] = 'g';
+        vgm_data[2] = 'm'; vgm_data[3] = ' ';
+
+        // Version 1.51
+        vgm_data[0x08] = 0x51; vgm_data[0x09] = 0x01;
+
+        // Total samples
+        vgm_data[0x18] = (total_samples >> 0) & 0xFF;
+        vgm_data[0x19] = (total_samples >> 8) & 0xFF;
+        vgm_data[0x1A] = (total_samples >> 16) & 0xFF;
+        vgm_data[0x1B] = (total_samples >> 24) & 0xFF;
+
+        // VGM data offset (relative to 0x34) = 256 - 0x34 = 204
+        uint32_t data_offset = 256 - 0x34;
+        vgm_data[0x34] = (data_offset >> 0) & 0xFF;
+        vgm_data[0x35] = (data_offset >> 8) & 0xFF;
+        vgm_data[0x36] = (data_offset >> 16) & 0xFF;
+        vgm_data[0x37] = (data_offset >> 24) & 0xFF;
+
+        // Add wait commands for the duration
+        uint32_t remaining = total_samples;
+        while (remaining > 0)
+        {
+            if (remaining <= 16)
+            {
+                // Short wait: 0x70-0x7F = wait 1-16 samples
+                vgm_data.push_back(0x6F + static_cast<uint8_t>(remaining));
+                remaining = 0;
+            }
+            else if (remaining <= 65535)
+            {
+                // Wait N samples: 0x61 nn nn
+                vgm_data.push_back(0x61);
+                vgm_data.push_back(remaining & 0xFF);
+                vgm_data.push_back((remaining >> 8) & 0xFF);
+                remaining = 0;
+            }
+            else
+            {
+                // Wait max and continue
+                vgm_data.push_back(0x61);
+                vgm_data.push_back(0xFF);
+                vgm_data.push_back(0xFF);
+                remaining -= 65535;
+            }
+        }
+
+        // End of sound data
+        vgm_data.push_back(0x66);
+
+        // Update EOF offset (relative to 0x04)
+        uint32_t eof_offset = static_cast<uint32_t>(vgm_data.size()) - 4;
+        vgm_data[0x04] = (eof_offset >> 0) & 0xFF;
+        vgm_data[0x05] = (eof_offset >> 8) & 0xFF;
+        vgm_data[0x06] = (eof_offset >> 16) & 0xFF;
+        vgm_data[0x07] = (eof_offset >> 24) & 0xFF;
+
+        printf("Created timing VGM: %zu bytes, %u samples (%.2f seconds)\n",
+               vgm_data.size(), total_samples, total_samples / 44100.0f);
+    }
+
+    // Create GD3 tag
+    GD3Tag* gd3_tag = nullptr;
+    if (!opts.title.empty() || !opts.author.empty() || !opts.album.empty() ||
+        (title && title[0]))
+    {
+        gd3_tag = new GD3Tag();
+        gd3_tag->title_en = opts.title.empty() ? (title ? title : "") : opts.title;
+        gd3_tag->author_en = opts.author;
+        gd3_tag->album_en = opts.album;
+        gd3_tag->system_en = opts.system;
+        gd3_tag->date = opts.date;
+        gd3_tag->converted_by = "fmconv (OpenMPT)";
+        gd3_tag->notes = opts.notes;
+    }
+
+    // Add GD3 tag to VGM if we have metadata
+    if (gd3_tag)
+    {
+        // TODO: Inject GD3 tag into VGM data
+        // For now, the VGM from openmpt_export doesn't include GD3
+    }
+
+    // Write output
+    size_t bytes_written = 0;
+
+    if (opts.output_format == OutputFormat::FM9 && !pcm_data.empty())
+    {
+        // FM9 with embedded sample audio
+        FM9Writer writer;
+        writer.setVGMData(vgm_data);
+
+        // Convert PCM to WAV format for embedding
+        // PCM data is stereo interleaved int16_t at sample_rate
+        std::vector<uint8_t> wav_data;
+        size_t num_samples = pcm_data.size();
+        size_t data_size = num_samples * sizeof(int16_t);
+
+        // WAV header (44 bytes)
+        wav_data.resize(44 + data_size);
+        uint8_t* p = wav_data.data();
+
+        // RIFF header
+        memcpy(p, "RIFF", 4); p += 4;
+        uint32_t file_size = static_cast<uint32_t>(36 + data_size);
+        memcpy(p, &file_size, 4); p += 4;
+        memcpy(p, "WAVE", 4); p += 4;
+
+        // fmt chunk
+        memcpy(p, "fmt ", 4); p += 4;
+        uint32_t fmt_size = 16;
+        memcpy(p, &fmt_size, 4); p += 4;
+        uint16_t audio_format = 1;  // PCM
+        memcpy(p, &audio_format, 2); p += 2;
+        uint16_t num_channels = 2;  // Stereo
+        memcpy(p, &num_channels, 2); p += 2;
+        memcpy(p, &sample_rate, 4); p += 4;
+        uint32_t byte_rate = sample_rate * num_channels * sizeof(int16_t);
+        memcpy(p, &byte_rate, 4); p += 4;
+        uint16_t block_align = num_channels * sizeof(int16_t);
+        memcpy(p, &block_align, 2); p += 2;
+        uint16_t bits_per_sample = 16;
+        memcpy(p, &bits_per_sample, 2); p += 2;
+
+        // data chunk
+        memcpy(p, "data", 4); p += 4;
+        uint32_t data_chunk_size = static_cast<uint32_t>(data_size);
+        memcpy(p, &data_chunk_size, 4); p += 4;
+
+        // PCM samples
+        memcpy(p, pcm_data.data(), data_size);
+
+        // Set WAV data as audio
+        writer.setAudioData(wav_data, FM9_AUDIO_WAV);
+
+        // Set cover image if provided
+        if (!opts.image_file.empty())
+        {
+            if (!writer.setImageFile(opts.image_file, opts.dither_image))
+            {
+                fprintf(stderr, "Warning: %s\n", writer.getError().c_str());
+            }
+        }
+
+        printf("Writing: %s (FM9 with embedded sample audio)\n", opts.output_file.c_str());
+        bytes_written = writer.write(opts.output_file);
+        if (bytes_written == 0)
+        {
+            fprintf(stderr, "Error: %s\n", writer.getError().c_str());
+            delete gd3_tag;
+            return 3;
+        }
+
+        printf("Success! FM9 size: %zu bytes (VGM: %zu, Audio: %zu samples)\n",
+               bytes_written, vgm_data.size(), pcm_data.size() / 2);
+    }
+    else
+    {
+        // Standard VGM/VGZ/FM9 output (no embedded audio)
+        if (!pcm_data.empty())
+        {
+            printf("Warning: This file contains sample-based instruments that will not be\n");
+            printf("         included in VGM/VGZ output. Use FM9 format to include them:\n");
+            printf("           fmconv \"%s\" --format fm9\n", opts.input_file.c_str());
+        }
+
+        bytes_written = writeOutputFile(opts.output_file, vgm_data, opts);
+        if (bytes_written == 0)
+        {
+            delete gd3_tag;
+            return 3;
+        }
+    }
+
+    delete gd3_tag;
+    return 0;
+}
+#endif // HAVE_OPENMPT
+
 int main(int argc, char** argv)
 {
     Options opts;
@@ -1351,6 +1694,15 @@ int main(int argc, char** argv)
 
     case FormatCategory::NATIVE_OPL:
         return convert_native_opl(opts);
+
+    case FormatCategory::TRACKER_FORMAT:
+#ifdef HAVE_OPENMPT
+        return convert_openmpt(opts);
+#else
+        // Fallback when OpenMPT not available
+        printf("Note: OpenMPT not available, trying AdPlug...\n");
+        return convert_native_opl(opts);
+#endif
 
     case FormatCategory::UNKNOWN:
         // Try AdPlug first (it's more flexible)
