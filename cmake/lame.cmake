@@ -107,12 +107,4 @@ else()
     target_compile_options(lame_static PRIVATE -w)
 endif()
 
-# IEEE754 floating point
-if(NOT MSVC)
-    target_compile_definitions(lame_static PRIVATE
-        ieee754_float32_t=float
-        ieee754_float64_t=double
-    )
-endif()
-
 message(STATUS "LAME MP3 encoder library configured")
