@@ -10,3 +10,6 @@
 [submodule "openmpt"]
 	path = openmpt
 	url = https://github.com/OpenMPT/openmpt.git
+[submodule "lame"]
+	path = lame
+	url = https://github.com/lameproject/lame.git

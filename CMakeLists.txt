@@ -35,6 +35,18 @@ if(BUILD_OPENMPT AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/openmpt)
 endif()
 
 # ============================================================================
+# libmp3lame - for MP3 audio compression (vendored)
+# ============================================================================
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/lame/libmp3lame/lame.c)
+    include(cmake/lame.cmake)
+    set(HAVE_LAME TRUE)
+else()
+    message(WARNING "LAME submodule not found - MP3 encoding will be disabled")
+    message(WARNING "  Run: git submodule update --init")
+    set(HAVE_LAME FALSE)
+endif()
+
+# ============================================================================
 # fmconv - Unified converter
 # Converts both MIDI-style formats (with bank selection) and native OPL
 # formats (with embedded instruments) to VGM
@@ -47,6 +59,7 @@ set(FMCONV_SOURCES
     src/formats/hmp_to_midi.cpp
     src/adplug_vgm/vgm_opl.cpp
     src/fm9_writer/fm9_writer.cpp
+    src/audio/mp3_encoder.cpp
     src/miniz.c
     src/miniz_tdef.c
     src/miniz_tinfl.c
@@ -78,10 +91,20 @@ endif()
 # miniz provides gzip compression (embedded, no external dependency)
 target_compile_definitions(fmconv PRIVATE HAVE_MINIZ)
 
+# Add LAME support if available
+if(HAVE_LAME)
+    target_compile_definitions(fmconv PRIVATE HAVE_LAME)
+endif()
+
 target_link_libraries(fmconv
     ADLMIDI_static
     adplug::adplug
 )
+
+# Link LAME if available
+if(HAVE_LAME)
+    target_link_libraries(fmconv lame_static)
+endif()
 
 # Link libopenmpt if enabled
 if(BUILD_OPENMPT AND TARGET libopenmpt)

@@ -52,6 +52,11 @@
 #include "openmpt/openmpt_export.h"
 #endif
 
+// MP3 encoding (optional)
+#ifdef HAVE_LAME
+#include "audio/mp3_encoder.h"
+#endif
+
 // Format categories
 enum class FormatCategory
 {
@@ -97,6 +102,10 @@ struct Options
     std::string fx_file;        // Optional effects JSON file
     std::string image_file;     // Optional cover image (PNG/JPEG/GIF)
     bool dither_image = true;   // Apply dithering to cover image
+
+    // Audio compression options
+    bool no_compress_audio = false;  // Skip MP3 compression (embed WAV as-is)
+    int audio_bitrate = 192;         // MP3 bitrate (96, 128, 160, 192, 256, 320)
 
     // GD3 metadata
     std::string title;
@@ -395,10 +404,85 @@ static size_t writeOutputFile(const std::string& filename,
         if (!opts.audio_file.empty())
         {
             printf("Embedding audio: %s\n", opts.audio_file.c_str());
-            if (!writer.setAudioFile(opts.audio_file))
+
+            // Check file type
+            std::string audio_ext = getExtension(opts.audio_file);
+            bool is_wav = (audio_ext == "wav" || audio_ext == "wave");
+            bool is_mp3 = (audio_ext == "mp3");
+
+            // Warn if bitrate specified for MP3 input (we don't re-encode)
+            if (is_mp3 && opts.audio_bitrate != 192)
             {
-                fprintf(stderr, "Error: %s\n", writer.getError().c_str());
-                return 0;
+                printf("Note: --audio-bitrate ignored for MP3 input (no re-encoding)\n");
+            }
+
+#ifdef HAVE_LAME
+            if (is_wav && !opts.no_compress_audio)
+            {
+                // Compress WAV to MP3 (also normalizes to 44.1kHz stereo)
+                printf("Converting to MP3 (%d kbps, 44.1kHz stereo)...\n", opts.audio_bitrate);
+
+                std::string mp3_error;
+                std::vector<uint8_t> mp3_data = encodeWAVtoMP3(opts.audio_file, opts.audio_bitrate, &mp3_error);
+
+                if (mp3_data.empty())
+                {
+                    fprintf(stderr, "Warning: MP3 encoding failed: %s\n", mp3_error.c_str());
+                    fprintf(stderr, "         Falling back to WAV\n");
+                    // Fall through to load as normalized WAV
+                    std::string wav_error;
+                    std::vector<uint8_t> wav_data = normalizeWAVFile(opts.audio_file, &wav_error);
+                    if (wav_data.empty())
+                    {
+                        fprintf(stderr, "Error: %s\n", wav_error.c_str());
+                        return 0;
+                    }
+                    writer.setAudioData(wav_data, FM9_AUDIO_WAV);
+                }
+                else
+                {
+                    // Read original WAV size for comparison
+                    std::ifstream wav_file(opts.audio_file, std::ios::binary | std::ios::ate);
+                    size_t wav_size = wav_file ? static_cast<size_t>(wav_file.tellg()) : 0;
+
+                    printf("MP3 encoded: %zu bytes", mp3_data.size());
+                    if (wav_size > 0)
+                    {
+                        printf(" (%.1f%% of original)", 100.0 * mp3_data.size() / wav_size);
+                    }
+                    printf("\n");
+
+                    writer.setAudioData(mp3_data, FM9_AUDIO_MP3);
+                }
+            }
+            else if (is_wav && opts.no_compress_audio)
+            {
+                // Normalize WAV to 44.1kHz 16-bit stereo
+                printf("Normalizing to 44.1kHz 16-bit stereo WAV...\n");
+                std::string wav_error;
+                std::vector<uint8_t> wav_data = normalizeWAVFile(opts.audio_file, &wav_error);
+                if (wav_data.empty())
+                {
+                    fprintf(stderr, "Error: %s\n", wav_error.c_str());
+                    return 0;
+                }
+                writer.setAudioData(wav_data, FM9_AUDIO_WAV);
+            }
+            else
+#endif
+            {
+                // Load audio file as-is (MP3, or WAV when LAME not available)
+#ifndef HAVE_LAME
+                if (!opts.no_compress_audio && is_wav)
+                {
+                    printf("Note: MP3 encoding not available (LAME not linked), embedding as WAV\n");
+                }
+#endif
+                if (!writer.setAudioFile(opts.audio_file))
+                {
+                    fprintf(stderr, "Error: %s\n", writer.getError().c_str());
+                    return 0;
+                }
             }
         }
 
@@ -563,13 +647,17 @@ void show_usage(const char* program_name)
     printf("Output Format:\n");
     printf("  --format <fmt>       Output format: fm9 (default), vgz, vgm\n");
     printf("  --vgz                Shorthand for --format vgz\n");
-    printf("  --vgm                Shorthand for --format vgm\n");
+    printf("  --vgm, --raw-vgm     Shorthand for --format vgm\n");
     printf("\n");
     printf("FM9 Options:\n");
     printf("  --audio <file>       Embed audio file (WAV or MP3) for playback\n");
     printf("  --fx <file>          Embed effects JSON file for automation\n");
     printf("  --image <file>       Embed cover image (PNG, JPEG, or GIF)\n");
     printf("  --no-dither          Disable dithering on cover image (clean output)\n");
+    printf("\n");
+    printf("Audio Compression (default: MP3 at 192kbps):\n");
+    printf("  --uncompressed-audio Embed audio as WAV (no MP3 compression)\n");
+    printf("  --audio-bitrate <N>  MP3 bitrate: 96, 128, 160, 192, 256, 320 (default: 192)\n");
     printf("\n");
     printf("Info:\n");
     printf("  --list-banks         Show all available FM banks\n");
@@ -766,13 +854,8 @@ bool parse_args(int argc, char** argv, Options& opts)
         {
             opts.output_format = OutputFormat::VGZ;
         }
-        else if (arg == "--vgm")
+        else if (arg == "--vgm" || arg == "--raw-vgm")
         {
-            opts.output_format = OutputFormat::VGM;
-        }
-        else if (arg == "--no-compress")
-        {
-            // Legacy option - same as --vgm
             opts.output_format = OutputFormat::VGM;
         }
         else if (arg == "--audio" && i + 1 < argc)
@@ -790,6 +873,22 @@ bool parse_args(int argc, char** argv, Options& opts)
         else if (arg == "--no-dither")
         {
             opts.dither_image = false;
+        }
+        else if (arg == "--uncompressed-audio")
+        {
+            opts.no_compress_audio = true;
+        }
+        else if (arg == "--audio-bitrate" && i + 1 < argc)
+        {
+            opts.audio_bitrate = atoi(argv[++i]);
+            // Validate bitrate
+            if (opts.audio_bitrate != 96 && opts.audio_bitrate != 128 &&
+                opts.audio_bitrate != 160 && opts.audio_bitrate != 192 &&
+                opts.audio_bitrate != 256 && opts.audio_bitrate != 320)
+            {
+                fprintf(stderr, "Warning: Non-standard bitrate %d, using 192\n", opts.audio_bitrate);
+                opts.audio_bitrate = 192;
+            }
         }
         else if (arg == "--no-suffix")
         {
@@ -1621,48 +1720,91 @@ int convert_openmpt(const Options& opts)
         std::string ext = getExtension(opts.input_file);
         writer.setSourceFormat(ext);
 
-        // Convert PCM to WAV format for embedding
-        // PCM data is stereo interleaved int16_t at sample_rate
-        std::vector<uint8_t> wav_data;
-        size_t num_samples = pcm_data.size();
-        size_t data_size = num_samples * sizeof(int16_t);
+        // Encode audio - MP3 by default, WAV if --uncompressed-audio specified
+        std::vector<uint8_t> audio_data;
+        uint8_t audio_format_code = FM9_AUDIO_WAV;
+        size_t pcm_sample_count = pcm_data.size() / 2;  // Stereo pairs
 
-        // WAV header (44 bytes)
-        wav_data.resize(44 + data_size);
-        uint8_t* p = wav_data.data();
+#ifdef HAVE_LAME
+        if (!opts.no_compress_audio)
+        {
+            // Encode to MP3
+            printf("Encoding audio to MP3 (%d kbps)...\n", opts.audio_bitrate);
 
-        // RIFF header
-        memcpy(p, "RIFF", 4); p += 4;
-        uint32_t file_size = static_cast<uint32_t>(36 + data_size);
-        memcpy(p, &file_size, 4); p += 4;
-        memcpy(p, "WAVE", 4); p += 4;
+            MP3EncoderConfig mp3_config;
+            mp3_config.sample_rate = sample_rate;
+            mp3_config.channels = 2;
+            mp3_config.bitrate_kbps = opts.audio_bitrate;
 
-        // fmt chunk
-        memcpy(p, "fmt ", 4); p += 4;
-        uint32_t fmt_size = 16;
-        memcpy(p, &fmt_size, 4); p += 4;
-        uint16_t audio_format = 1;  // PCM
-        memcpy(p, &audio_format, 2); p += 2;
-        uint16_t num_channels = 2;  // Stereo
-        memcpy(p, &num_channels, 2); p += 2;
-        memcpy(p, &sample_rate, 4); p += 4;
-        uint32_t byte_rate = sample_rate * num_channels * sizeof(int16_t);
-        memcpy(p, &byte_rate, 4); p += 4;
-        uint16_t block_align = num_channels * sizeof(int16_t);
-        memcpy(p, &block_align, 2); p += 2;
-        uint16_t bits_per_sample = 16;
-        memcpy(p, &bits_per_sample, 2); p += 2;
+            std::string mp3_error;
+            audio_data = encodePCMtoMP3(pcm_data.data(), pcm_sample_count, mp3_config, &mp3_error);
 
-        // data chunk
-        memcpy(p, "data", 4); p += 4;
-        uint32_t data_chunk_size = static_cast<uint32_t>(data_size);
-        memcpy(p, &data_chunk_size, 4); p += 4;
+            if (audio_data.empty())
+            {
+                fprintf(stderr, "Warning: MP3 encoding failed: %s\n", mp3_error.c_str());
+                fprintf(stderr, "         Falling back to WAV\n");
+            }
+            else
+            {
+                audio_format_code = FM9_AUDIO_MP3;
+                printf("MP3 encoded: %zu bytes (%.1f%% of WAV size)\n",
+                       audio_data.size(),
+                       100.0 * audio_data.size() / (pcm_data.size() * sizeof(int16_t)));
+            }
+        }
+#else
+        if (!opts.no_compress_audio)
+        {
+            printf("Note: MP3 encoding not available (LAME not linked), using WAV\n");
+        }
+#endif
 
-        // PCM samples
-        memcpy(p, pcm_data.data(), data_size);
+        // Fall back to WAV if MP3 encoding failed or was disabled
+        if (audio_data.empty())
+        {
+            // Convert PCM to WAV format for embedding
+            size_t num_samples = pcm_data.size();
+            size_t data_size = num_samples * sizeof(int16_t);
 
-        // Set WAV data as audio
-        writer.setAudioData(wav_data, FM9_AUDIO_WAV);
+            // WAV header (44 bytes)
+            audio_data.resize(44 + data_size);
+            uint8_t* p = audio_data.data();
+
+            // RIFF header
+            memcpy(p, "RIFF", 4); p += 4;
+            uint32_t file_size = static_cast<uint32_t>(36 + data_size);
+            memcpy(p, &file_size, 4); p += 4;
+            memcpy(p, "WAVE", 4); p += 4;
+
+            // fmt chunk
+            memcpy(p, "fmt ", 4); p += 4;
+            uint32_t fmt_size = 16;
+            memcpy(p, &fmt_size, 4); p += 4;
+            uint16_t wav_audio_format = 1;  // PCM
+            memcpy(p, &wav_audio_format, 2); p += 2;
+            uint16_t num_channels = 2;  // Stereo
+            memcpy(p, &num_channels, 2); p += 2;
+            memcpy(p, &sample_rate, 4); p += 4;
+            uint32_t byte_rate = sample_rate * num_channels * sizeof(int16_t);
+            memcpy(p, &byte_rate, 4); p += 4;
+            uint16_t block_align = num_channels * sizeof(int16_t);
+            memcpy(p, &block_align, 2); p += 2;
+            uint16_t bits_per_sample = 16;
+            memcpy(p, &bits_per_sample, 2); p += 2;
+
+            // data chunk
+            memcpy(p, "data", 4); p += 4;
+            uint32_t data_chunk_size = static_cast<uint32_t>(data_size);
+            memcpy(p, &data_chunk_size, 4); p += 4;
+
+            // PCM samples
+            memcpy(p, pcm_data.data(), data_size);
+
+            audio_format_code = FM9_AUDIO_WAV;
+        }
+
+        // Set audio data
+        writer.setAudioData(audio_data, audio_format_code);
 
         // Set cover image if provided
         if (!opts.image_file.empty())
@@ -1673,7 +1815,8 @@ int convert_openmpt(const Options& opts)
             }
         }
 
-        printf("Writing: %s (FM9 with embedded sample audio)\n", opts.output_file.c_str());
+        const char* audio_type = (audio_format_code == FM9_AUDIO_MP3) ? "MP3" : "WAV";
+        printf("Writing: %s (FM9 with embedded %s audio)\n", opts.output_file.c_str(), audio_type);
         bytes_written = writer.write(opts.output_file);
         if (bytes_written == 0)
         {
@@ -1682,8 +1825,8 @@ int convert_openmpt(const Options& opts)
             return 3;
         }
 
-        printf("Success! FM9 size: %zu bytes (VGM: %zu, Audio: %zu samples)\n",
-               bytes_written, vgm_data.size(), pcm_data.size() / 2);
+        printf("Success! FM9 size: %zu bytes (VGM: %zu, Audio: %zu bytes %s)\n",
+               bytes_written, vgm_data.size(), audio_data.size(), audio_type);
     }
     else
     {

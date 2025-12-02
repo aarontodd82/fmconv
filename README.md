@@ -1,10 +1,10 @@
 # fmconv - FM9 Converter for FM-90s
 
-Convert retro game music to FM9 format for playback on [FM-90s](https://github.com/aarontodd82/FM-90s), a chiptune player with hardware YMF262 (OPL2/OPL3), YM2612 (Genesis/Mega Drive), and SN76489 (PSG) chips, plus software emulation of SNES, Game Boy, and NES sound.
+Convert retro music to FM9 format for playback on [FM-90s](https://github.com/aarontodd82/FM-90s), a chiptune player with hardware YMF262 (OPL2/OPL3), YM2612 (Genesis/Mega Drive), and SN76489 (PSG) chips, plus software emulation of SNES, Game Boy, and NES sound.
 
 ## Overview
 
-fmconv converts **50+ audio formats** from classic DOS games to FM9, an extended VGM format that supports:
+fmconv converts **100+ audio formats** to FM9, an extended VGM format that supports:
 
 - **FM synthesis** - Hardware playback via OPL2/OPL3 or Genesis chips
 - **Embedded PCM audio** - Layer WAV or MP3 audio alongside FM synthesis
@@ -51,104 +51,15 @@ fmconv doom.mus --vgz
 fmconv doom.mus --bank 16
 ```
 
-## Format Categories
+## Supported Formats
 
-### MIDI-Style Formats (libADLMIDI)
+| Engine | Formats | Notes |
+|--------|---------|-------|
+| **libADLMIDI** | MIDI, XMI, MUS, HMP/HMI | Requires FM bank selection |
+| **AdPlug** | RAD, IMF, DRO, CMF, ROL, 40+ more | Embedded FM instruments |
+| **OpenMPT** | S3M, MOD, XM, IT, 60+ more | S3M supports OPL; others render to audio |
 
-These formats contain note/program change messages and require an FM instrument bank:
-
-| Extension | Format | Notes |
-|-----------|--------|-------|
-| `.mid`, `.midi`, `.smf` | Standard MIDI File | General MIDI |
-| `.rmi` | RIFF MIDI | Windows MIDI format |
-| `.kar` | Karaoke MIDI | MIDI with lyrics |
-| `.xmi` | Extended MIDI | Miles Sound System (Origin, Westwood, etc.) |
-| `.mus` | DMX Music | DOOM, Heretic, Hexen |
-| `.hmp`, `.hmi` | HMI MIDI | Human Machine Interfaces (Descent, Duke3D) |
-| `.klm` | Wacky Wheels Music | Apogee game |
-
-**Bank selection matters!** These formats sound completely different with different banks because the FM instrument definitions come from the bank, not the file.
-
-### Native OPL Formats (AdPlug)
-
-These formats have **embedded FM instruments** - bank selection is not needed:
-
-| Extension | Format | Games/Software |
-|-----------|--------|----------------|
-| `.rad` | Reality AdLib Tracker | Various shareware |
-| `.a2m`, `.a2t` | Adlib Tracker 2 | Tracker music |
-| `.imf`, `.wlf`, `.adlib` | id Software Music | Wolfenstein 3D, Commander Keen |
-| `.dro` | DOSBox Raw OPL | DOSBox captures |
-| `.cmf` | Creative Music File | Early Sound Blaster games |
-| `.rol` | AdLib Visual Composer | Professional compositions |
-| `.d00` | EdLib | Packed tracker format |
-| `.s3m` | Scream Tracker 3 | OPL instrument modules |
-| `.ksm` | Ken Silverman Music | Build engine games |
-| `.laa` | LucasArts AdLib Audio | LucasArts adventures |
-| `.hsc` | HSC-Tracker | Tracker music |
-| `.lds` | LOUDNESS Sound System | Various games |
-| `.adl` | Westwood ADL | Westwood Studios games |
-| `.amd` | AMUSIC Adlib Tracker | Tracker music |
-| `.bam` | Bob's Adlib Music | Various |
-| `.cff` | Boomtracker 4.0 | Tracker music |
-| `.dfm` | Digital-FM | Tracker music |
-| `.dmo` | Twin TrackPlayer | Tracker music |
-| `.dtm` | DeFy Adlib Tracker | Tracker music |
-| `.got` | GOT Music | God of Thunder |
-| `.hsp` | HSC Packed | Packed HSC |
-| `.hsq`, `.sqx`, `.sdb`, `.agd`, `.ha2` | Herbulot AdLib System | Various games |
-| `.jbm` | JBM Adlib Music | Various |
-| `.mad` | Mlat Adlib Tracker | Tracker music |
-| `.mdi` | AdLib MIDIPlay | AdLib MIDI variant |
-| `.mkj` | MKJamz | Various |
-| `.msc` | AdLib MSC | Various |
-| `.mtk` | MPU-401 Trakker | Tracker music |
-| `.mtr` | Master Tracker | Tracker music |
-| `.pis` | Beni Tracker | Tracker music |
-| `.plx` | PALLADIX Sound System | Various games |
-| `.raw`, `.rac` | Raw AdLib Capture | Direct captures |
-| `.rix`, `.mkf` | Softstar RIX | Chinese RPGs |
-| `.sa2` | Surprise! Adlib Tracker 2 | Tracker music |
-| `.sat` | Surprise! Adlib Tracker | Tracker music |
-| `.sci` | Sierra SCI | Sierra games |
-| `.sng` | Various | SNGPlay, Faust, etc. |
-| `.sop` | Note Sequencer | sopepos software |
-| `.xad`, `.bmf` | Various | FLASH, BMF, etc. |
-| `.xms` | XMS-Tracker | Tracker music |
-| `.xsm` | eXtra Simple Music | Tracker music |
-| `.m` | Ultima 6 Music | Ultima 6 |
-| `.mus`, `.mdy`, `.ims` | AdLib MIDI/IMS | Various |
-
-### Tracker Formats (OpenMPT)
-
-These formats are handled by OpenMPT for accurate playback. S3M can contain OPL instruments; others are sample-based:
-
-| Extension | Format | OPL Support |
-|-----------|--------|-------------|
-| `.s3m` | Scream Tracker 3 | Yes (hybrid OPL+samples) |
-| `.mod` | ProTracker | No (samples only) |
-| `.xm` | FastTracker 2 | No (samples only) |
-| `.it` | Impulse Tracker | No (samples only) |
-| `.mptm` | OpenMPT Module | Yes |
-| `.stm` | Scream Tracker 2 | No |
-| `.669` | Composer 669 | No |
-| `.mtm` | MultiTracker | No |
-| `.med` | OctaMED | No |
-| `.okt` | Oktalyzer | No |
-| `.far` | Farandole Composer | No |
-| `.mdl` | Digitrakker | No |
-| `.ams` | Extreme's Tracker / Velvet Studio | No |
-| `.dbm` | DigiBooster Pro | No |
-| `.digi` | DigiBooster | No |
-| `.dmf` | X-Tracker | No |
-| `.dsm` | DSIK Format | No |
-| `.umx` | Unreal Music | No |
-| `.mt2` | MadTracker 2 | No |
-| `.psm` | Epic Megagames MASI | No |
-| `.j2b` | Jazz Jackrabbit 2 | No |
-| `.mo3` | MO3 Compressed | No |
-
-Plus 40+ additional formats. Use `--list-formats` for the complete list.
+See [docs/SUPPORTED_FORMATS.md](docs/SUPPORTED_FORMATS.md) for the complete list, or use `--list-formats`.
 
 ## Command-Line Options
 
@@ -175,6 +86,8 @@ Plus 40+ additional formats. Use `--list-formats` for the complete list.
 | Option | Description |
 |--------|-------------|
 | `--audio <file>` | Embed WAV or MP3 audio file for PCM playback alongside FM |
+| `--audio-bitrate <kbps>` | MP3 bitrate: 96, 128, 160, 192, 256, 320 (default: 192) |
+| `--uncompressed-audio` | Embed audio as WAV instead of MP3 |
 | `--fx <file>` | Embed effects automation JSON file |
 | `--image <file>` | Embed cover image (PNG, JPEG, or GIF) for display on FM-90s |
 | `--no-dither` | Disable retro styling on cover image |
@@ -221,126 +134,18 @@ These options only apply to AdPlug formats (RAD, IMF, DRO, etc.):
 
 ## FM Instrument Banks (MIDI-Style Only)
 
-For MIDI-style formats, the instrument bank determines how every instrument sounds. Different banks are optimized for different games and sound systems.
+For MIDI-style formats, the instrument bank determines how every instrument sounds.
 
-### Complete Bank List (0-78)
-
-| ID | Bank Name | Recommended For |
-|----|-----------|-----------------|
-| 0 | AIL (The Fat Man 2op set, default AIL) | SimCity 2000, Miles Sound System games |
-| 1 | Bisqwit (selection of 4op and 2op) | General purpose |
-| 2 | HMI (Descent, Asterix) | Descent, Asterix |
-| 3 | HMI (Descent:: Int) | Descent International |
-| 4 | HMI (Descent:: Ham) | Descent Ham version |
-| 5 | HMI (Descent:: Rick) | Descent Rick version |
-| 6 | HMI (Descent 2) | Descent 2 |
-| 7 | HMI (Normality) | Normality |
-| 8 | HMI (Shattered Steel) | Shattered Steel |
-| 9 | HMI (Theme Park) | Theme Park |
-| 10 | HMI (MegaPatch by LoudMouth) | General HMI games |
-| 11 | HMI (Aces of the Deep) | Aces of the Deep |
-| 12 | HMI (Earthsiege) | Earthsiege |
-| 13 | HMI (Anvil of Dawn) | Anvil of Dawn |
-| 14 | DMX (Bobby Prince v2) | DOOM variants |
-| 15 | DMX (Cygnus Studios, default DMX) | DOOM, Heretic, Hexen |
-| 16 | DMX (Bobby Prince v1) | **DOOM, Heretic, Hexen (recommended)** |
-| 17 | AIL (Discworld, Grandest Fleet, etc.) | Discworld, Grandest Fleet |
-| 18 | AIL (Warcraft 2) | Warcraft 2 |
-| 19 | AIL (Syndicate) | Syndicate |
-| 20 | AIL (Guilty, Orion Conspiracy, TNSFC ::4op) | Various |
-| 21 | AIL (Magic Carpet 2) :NON-GM: | Magic Carpet 2 |
-| 22 | AIL (Nemesis) | Nemesis |
-| 23 | AIL (Jagged Alliance) :NON-GM: | Jagged Alliance |
-| 24 | AIL (When Two Worlds War) :MISS-INS: | When Two Worlds War |
-| 25 | AIL (Bards Tale Construction) :MISS-INS: | Bard's Tale Construction |
-| 26 | AIL (Return to Zork) :NON-GM: | Return to Zork |
-| 27 | AIL (Theme Hospital) | Theme Hospital |
-| 28 | AIL (National Hockey League PA) | NHL PA |
-| 29 | AIL (Inherit The Earth) :NON-GM: | Inherit The Earth |
-| 30 | AIL (Inherit The Earth, file two) :NON-GM: | Inherit The Earth |
-| 31 | AIL (Little Big Adventure) :4op: | Little Big Adventure |
-| 32 | AIL (Heroes of Might and Magic II) :NON-GM: | Heroes II |
-| 33 | AIL (Death Gate) | Death Gate |
-| 34 | AIL (FIFA International Soccer) | FIFA |
-| 35 | AIL (Starship Invasion) | Starship Invasion |
-| 36 | AIL (Super Street Fighter 2 :4op:) | Super Street Fighter 2 |
-| 37 | AIL (Lords of the Realm) :MISS-INS: | Lords of the Realm |
-| 38 | AIL (SimFarm, SimHealth) :4op: | SimFarm, SimHealth |
-| 39 | AIL (SimFarm, Settlers, Serf City) | SimFarm, Settlers |
-| 40 | AIL (Caesar 2) :p4op: :MISS-INS: | Caesar 2 |
-| 41 | AIL (Syndicate Wars) :NON-GM: | Syndicate Wars |
-| 42 | AIL (LoudMouth by Probe Ent.) | LoudMouth games |
-| 43 | AIL (Warcraft) :NON-GM: | Warcraft 1 |
-| 44 | AIL (Terra Nova Strike Force Centuri) :p4op: | Terra Nova |
-| 45 | AIL (System Shock) :p4op: | System Shock |
-| 46 | AIL (Advanced Civilization) | Advanced Civilization |
-| 47 | AIL (Battle Chess 4000) :p4op: :NON-GM: | Battle Chess 4000 |
-| 48 | AIL (Ultimate Soccer Manager :p4op:) | Ultimate Soccer Manager |
-| 49 | AIL (Air Bucks, Blue And The Gray, etc) :NON-GM: | Air Bucks |
-| 50 | AIL (Ultima Underworld 2) :NON-GM: | Ultima Underworld 2 |
-| 51 | AIL (FatMan MT32) :NON-GM: | MT-32 emulation |
-| 52 | AIL (High Seas Trader) :MISS-INS: | High Seas Trader |
-| 53 | AIL (Master of Magic) :4op: | Master of Magic |
-| 54 | AIL (Master of Magic) :4op: orchestral drums | Master of Magic (alt) |
-| 55 | SB (Action Soccer) | Action Soccer |
-| 56 | SB (3d Cyberpuck :: melodic only) | 3D Cyberpuck |
-| 57 | SB (Simon the Sorcerer :: melodic only) | Simon the Sorcerer |
-| 58 | OP3 (The Fat Man 2op set; Win9x) | **General MIDI (recommended)** |
-| 59 | OP3 (The Fat Man 4op set) | General MIDI 4-op |
-| 60 | OP3 (JungleVision 2op set :: melodic only) | JungleVision |
-| 61 | OP3 (Wallace 2op set, Nitemare 3D :: melodic only) | Nitemare 3D |
-| 62 | TMB (Duke Nukem 3D) | **Duke Nukem 3D** |
-| 63 | TMB (Shadow Warrior) | Shadow Warrior |
-| 64 | DMX (Scott Host) | DMX variant |
-| 65 | SB (Modded GMOPL by Wohlstand) | General purpose |
-| 66 | SB (Jamie O'Connell's bank) | General purpose |
-| 67 | TMB (Apogee Sound System Default bank) :broken drums: | Apogee games |
-| 68 | WOPL (4op bank by James Alan Nguyen and Wohlstand) | Modern 4-op |
-| 69 | TMB (Blood) | Blood |
-| 70 | TMB (Rise of the Triad) | Rise of the Triad |
-| 71 | TMB (Nam) | NAM |
-| 72 | WOPL (DMXOPL3 bank by Sneakernets) | Modern DOOM |
-| 73 | EA (Cartooners) | Cartooners |
-| 74 | WOPL (Apogee IMF 90-ish) | **Wolfenstein 3D, Commander Keen** |
-| 75 | AIL (The Lost Vikings) :NON-GM: | The Lost Vikings |
-| 76 | DMX (Strife) | Strife |
-| 77 | WOPL (MS-AdLib, Windows 3.x) | Windows 3.x |
-| 78 | AIL (Monopoly Deluxe) | Monopoly Deluxe |
-
-### Bank Tag Meanings
-
-- **:4op:** - Uses 4-operator FM synthesis (richer sound)
-- **:p4op:** - Partial 4-operator support
-- **:NON-GM:** - Non-General MIDI, may have unusual instrument mappings
-- **:MISS-INS:** - Some instruments may be missing
-
-### Common Bank Recommendations
-
-| Game Series | Recommended Bank |
-|-------------|-----------------|
+| Use Case | Recommended Bank |
+|----------|-----------------|
 | DOOM, Heretic, Hexen | 16 (DMX Bobby Prince v1) |
 | Descent series | 2-6 (HMI variants) |
-| Duke Nukem 3D | 62 (TMB Duke Nukem 3D) |
+| Duke Nukem 3D | 62 |
 | Wolfenstein 3D, Commander Keen | 74 (WOPL Apogee IMF) |
-| General MIDI files | 58 (OP3 Fat Man 2op) |
-| Miles Sound System games | 0 (AIL Fat Man) |
+| General MIDI | 58 (OP3 Fat Man 2op) |
+| Miles Sound System | 0 (AIL Fat Man) |
 
-## Volume Models (MIDI-Style Only)
-
-| ID | Model | Description |
-|----|-------|-------------|
-| 0 | AUTO | Automatically selected based on bank |
-| 1 | Generic | Linear volume scaling |
-| 2 | NativeOPL3 | Logarithmic (OPL3 native curve) |
-| 3 | DMX | Logarithmic (DOOM-style) |
-| 4 | APOGEE | Logarithmic (Apogee Sound System) |
-| 5 | Win9x | Windows 9x driver style |
-| 6 | DMX (Fixed AM) | DMX with fixed AM carriers |
-| 7 | APOGEE (Fixed AM) | Apogee with fixed AM carriers |
-| 8 | AIL | Audio Interface Library style |
-| 9 | Win9x (Generic FM) | Windows with generic FM |
-| 10 | HMI | HMI Sound Operating System |
-| 11 | HMI_OLD | HMI (older variant) |
+See [docs/MIDI_BANKS.md](docs/MIDI_BANKS.md) for the full list of 79 banks and volume models, or use `--list-banks`.
 
 ## Technical Details
 
@@ -569,21 +374,22 @@ cmake -B build -DBUILD_ADPLUG=OFF
 
 ## Credits
 
-- **libADLMIDI** by Vitaly Novichkov (Wohlstand) - MIDI to OPL synthesis
-- **AdPlug** by Simon Peter et al. - Native OPL format playback
-- **libbinio** - Binary I/O library for AdPlug
-- **OpenMPT** by OpenMPT Project Developers - Tracker format playback
-- **miniz** by Rich Geldreich - Compression
-- **stb_image** by Sean Barrett - Image loading
-- FM instrument banks from various contributors
+- **[libADLMIDI](https://github.com/Wohlstand/libADLMIDI)** by Vitaly Novichkov (Wohlstand) - MIDI to OPL synthesis
+- **[AdPlug](https://adplug.github.io/)** by Simon Peter et al. - Native OPL format playback
+- **[libbinio](https://github.com/adplug/libbinio)** - Binary I/O library for AdPlug
+- **[OpenMPT](https://openmpt.org/)** by OpenMPT Project Developers and Olivier Lapicque - Tracker format playback
+- **[LAME](https://lame.sourceforge.io/)** - MP3 encoding
+- **[miniz](https://github.com/richgel999/miniz)** by Rich Geldreich - Compression
+- **[stb_image](https://github.com/nothings/stb)** by Sean Barrett - Image loading
 
 ## License
 
 This tool combines multiple open-source libraries:
-- libADLMIDI: LGPLv2.1+
+- libADLMIDI: LGPLv3+
 - AdPlug: LGPLv2.1
 - libbinio: LGPLv2.1+
 - OpenMPT/libopenmpt: BSD-3-Clause
+- LAME: LGPLv2
 - miniz: MIT
 - stb_image: Public Domain / MIT
 
