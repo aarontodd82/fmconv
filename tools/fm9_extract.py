@@ -190,6 +190,245 @@ def rgb565_to_rgb888(pixel):
     return r, g, b
 
 
+def parse_vgm_header(vgm_data):
+    """Parse VGM header for chip and timing info."""
+    if len(vgm_data) < 64 or vgm_data[:4] != b'Vgm ':
+        return None
+
+    info = {}
+
+    # Basic header fields
+    info['eof_offset'] = struct.unpack('<I', vgm_data[0x04:0x08])[0]
+    info['version'] = struct.unpack('<I', vgm_data[0x08:0x0C])[0]
+    info['gd3_offset'] = struct.unpack('<I', vgm_data[0x14:0x18])[0]
+    info['total_samples'] = struct.unpack('<I', vgm_data[0x18:0x1C])[0]
+    info['loop_offset'] = struct.unpack('<I', vgm_data[0x1C:0x20])[0]
+    info['loop_samples'] = struct.unpack('<I', vgm_data[0x20:0x24])[0]
+
+    # Duration in seconds
+    info['duration_sec'] = info['total_samples'] / 44100.0
+
+    # Chip clocks (0 means chip not used)
+    info['chips'] = {}
+
+    # Common chips
+    chip_offsets = {
+        'SN76489': 0x0C,
+        'YM2413': 0x10,
+        'YM2612': 0x2C,
+        'YM2151': 0x30,
+        'YM3812': 0x50,  # OPL2
+        'YMF262': 0x5C,  # OPL3
+        'YM2203': 0x44,  # OPN
+        'YM2608': 0x48,  # OPNA
+        'YM2610': 0x4C,  # OPNB
+    }
+
+    for chip_name, offset in chip_offsets.items():
+        if offset + 4 <= len(vgm_data):
+            clock = struct.unpack('<I', vgm_data[offset:offset+4])[0]
+            if clock > 0:
+                # Check for dual chip flag (bit 30)
+                dual = bool(clock & 0x40000000)
+                clock &= 0x3FFFFFFF  # Mask off flags
+                info['chips'][chip_name] = {
+                    'clock': clock,
+                    'dual': dual
+                }
+
+    return info
+
+
+def parse_gd3_tag(vgm_data, gd3_rel_offset):
+    """Parse GD3 tag from VGM data."""
+    if gd3_rel_offset == 0:
+        return None
+
+    gd3_offset = 0x14 + gd3_rel_offset
+    if gd3_offset + 12 > len(vgm_data):
+        return None
+
+    # Check magic
+    if vgm_data[gd3_offset:gd3_offset+4] != b'Gd3 ':
+        return None
+
+    # Version and data length
+    version = struct.unpack('<I', vgm_data[gd3_offset+4:gd3_offset+8])[0]
+    data_len = struct.unpack('<I', vgm_data[gd3_offset+8:gd3_offset+12])[0]
+
+    if gd3_offset + 12 + data_len > len(vgm_data):
+        return None
+
+    # Parse UTF-16LE strings
+    str_data = vgm_data[gd3_offset+12:gd3_offset+12+data_len]
+
+    strings = []
+    current = b''
+    i = 0
+    while i < len(str_data) - 1:
+        char = str_data[i:i+2]
+        if char == b'\x00\x00':
+            try:
+                strings.append(current.decode('utf-16-le'))
+            except:
+                strings.append('')
+            current = b''
+        else:
+            current += char
+        i += 2
+
+    # GD3 fields in order
+    field_names = [
+        'title_en', 'title_jp',
+        'album_en', 'album_jp',
+        'system_en', 'system_jp',
+        'author_en', 'author_jp',
+        'date',
+        'converted_by',
+        'notes'
+    ]
+
+    gd3 = {'version': version}
+    for idx, name in enumerate(field_names):
+        gd3[name] = strings[idx] if idx < len(strings) else ''
+
+    return gd3
+
+
+def format_clock(hz):
+    """Format clock speed in human-readable form."""
+    if hz >= 1000000:
+        return f"{hz / 1000000:.3f} MHz"
+    elif hz >= 1000:
+        return f"{hz / 1000:.1f} kHz"
+    else:
+        return f"{hz} Hz"
+
+
+def format_duration(seconds):
+    """Format duration as mm:ss."""
+    mins = int(seconds) // 60
+    secs = seconds % 60
+    return f"{mins}:{secs:05.2f}"
+
+
+def write_info_file(info_path, fm9_header, vgm_info, gd3, source_format):
+    """Write info text file with all metadata."""
+    lines = []
+    lines.append("=" * 60)
+    lines.append("FM9 File Information")
+    lines.append("=" * 60)
+    lines.append("")
+
+    # Source format
+    if source_format[0]:
+        lines.append(f"Source Format: {source_format[0]} ({source_format[1]})")
+        lines.append("")
+
+    # GD3 metadata
+    if gd3:
+        lines.append("-" * 40)
+        lines.append("Metadata (GD3 Tag)")
+        lines.append("-" * 40)
+        if gd3.get('title_en'):
+            lines.append(f"Title:       {gd3['title_en']}")
+        if gd3.get('title_jp') and gd3['title_jp'] != gd3.get('title_en'):
+            lines.append(f"Title (JP):  {gd3['title_jp']}")
+        if gd3.get('album_en'):
+            lines.append(f"Album/Game:  {gd3['album_en']}")
+        if gd3.get('album_jp') and gd3['album_jp'] != gd3.get('album_en'):
+            lines.append(f"Album (JP):  {gd3['album_jp']}")
+        if gd3.get('system_en'):
+            lines.append(f"System:      {gd3['system_en']}")
+        if gd3.get('system_jp') and gd3['system_jp'] != gd3.get('system_en'):
+            lines.append(f"System (JP): {gd3['system_jp']}")
+        if gd3.get('author_en'):
+            lines.append(f"Author:      {gd3['author_en']}")
+        if gd3.get('author_jp') and gd3['author_jp'] != gd3.get('author_en'):
+            lines.append(f"Author (JP): {gd3['author_jp']}")
+        if gd3.get('date'):
+            lines.append(f"Date:        {gd3['date']}")
+        if gd3.get('converted_by'):
+            lines.append(f"Converted:   {gd3['converted_by']}")
+        if gd3.get('notes'):
+            lines.append(f"Notes:       {gd3['notes']}")
+        lines.append("")
+
+    # VGM info
+    if vgm_info:
+        lines.append("-" * 40)
+        lines.append("VGM Information")
+        lines.append("-" * 40)
+        version = vgm_info['version']
+        lines.append(f"VGM Version: {version >> 8}.{version & 0xFF:02x}")
+        lines.append(f"Duration:    {format_duration(vgm_info['duration_sec'])} ({vgm_info['total_samples']} samples)")
+
+        if vgm_info['loop_offset'] > 0:
+            loop_start_samples = vgm_info['total_samples'] - vgm_info['loop_samples']
+            lines.append(f"Loop:        Yes (starts at {format_duration(loop_start_samples / 44100.0)})")
+        else:
+            lines.append(f"Loop:        No")
+        lines.append("")
+
+        # Chips
+        if vgm_info['chips']:
+            lines.append("-" * 40)
+            lines.append("Sound Chips")
+            lines.append("-" * 40)
+            for chip_name, chip_info in vgm_info['chips'].items():
+                dual_str = " x2 (dual)" if chip_info['dual'] else ""
+                clock_str = format_clock(chip_info['clock'])
+
+                # Add chip description
+                chip_desc = {
+                    'YM3812': 'OPL2',
+                    'YMF262': 'OPL3',
+                    'YM2413': 'OPLL',
+                    'YM2612': 'OPN2 (Genesis)',
+                    'YM2151': 'OPM',
+                    'YM2203': 'OPN',
+                    'YM2608': 'OPNA',
+                    'YM2610': 'OPNB',
+                    'SN76489': 'PSG',
+                }.get(chip_name, '')
+
+                if chip_desc:
+                    lines.append(f"{chip_name} ({chip_desc}): {clock_str}{dual_str}")
+                else:
+                    lines.append(f"{chip_name}: {clock_str}{dual_str}")
+            lines.append("")
+
+    # FM9 container info
+    if fm9_header:
+        lines.append("-" * 40)
+        lines.append("FM9 Container")
+        lines.append("-" * 40)
+        lines.append(f"Version:     {fm9_header['version']}")
+
+        has_audio = bool(fm9_header['flags'] & FM9_FLAG_HAS_AUDIO)
+        has_fx = bool(fm9_header['flags'] & FM9_FLAG_HAS_FX)
+        has_image = bool(fm9_header['flags'] & FM9_FLAG_HAS_IMAGE)
+
+        if has_audio:
+            audio_type = "WAV" if fm9_header['audio_format'] == AUDIO_FORMAT_WAV else "MP3"
+            lines.append(f"Audio:       Yes ({audio_type}, {fm9_header['audio_size']} bytes)")
+        else:
+            lines.append(f"Audio:       No")
+
+        if has_fx:
+            lines.append(f"Effects:     Yes ({fm9_header['fx_size']} bytes)")
+        else:
+            lines.append(f"Effects:     No")
+
+        lines.append(f"Cover Image: {'Yes (100x100 RGB565)' if has_image else 'No'}")
+        lines.append("")
+
+    lines.append("=" * 60)
+
+    with open(info_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+
 def parse_fm9(data):
     """Parse FM9 header from decompressed data. Returns (header_dict, header_position, vgm_data)."""
     magic = b'FM90'
@@ -271,6 +510,14 @@ def extract_fm9(fm9_path, output_dir=None):
 
     extracted = []
 
+    # Parse VGM header for chip and timing info
+    vgm_info = parse_vgm_header(vgm_data)
+
+    # Parse GD3 tag if present
+    gd3 = None
+    if vgm_info and vgm_info['gd3_offset'] > 0:
+        gd3 = parse_gd3_tag(vgm_data, vgm_info['gd3_offset'])
+
     # Always extract VGM
     vgm_path = output_dir / f"{base_name}.vgm"
     with open(vgm_path, 'wb') as f:
@@ -280,6 +527,12 @@ def extract_fm9(fm9_path, output_dir=None):
 
     if header is None:
         print("\nNo FM9 extension found (plain VGZ file)")
+        # Still write info file for plain VGZ
+        if vgm_info or gd3:
+            info_path = output_dir / f"{base_name}_info.txt"
+            write_info_file(info_path, None, vgm_info, gd3, (None, None))
+            print(f"Info:   {info_path}")
+            extracted.append(info_path)
         return True
 
     print(f"\nFM9 version: {header['version']}")
@@ -339,6 +592,13 @@ def extract_fm9(fm9_path, output_dir=None):
             extracted.append(image_path)
         else:
             print(f"Warning: Image data truncated ({len(image_data)} bytes, expected {FM9_IMAGE_SIZE})")
+
+    # Write info text file with all metadata
+    source_format = get_source_format_name(header['source_format'])
+    info_path = output_dir / f"{base_name}_info.txt"
+    write_info_file(info_path, header, vgm_info, gd3, source_format)
+    print(f"Info:   {info_path}")
+    extracted.append(info_path)
 
     print(f"\nExtracted {len(extracted)} file(s)")
     return True

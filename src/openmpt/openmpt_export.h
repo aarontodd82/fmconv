@@ -36,7 +36,11 @@ int openmpt_export_has_samples(openmpt_export_context* ctx);
 
 // Get module info
 const char* openmpt_export_get_title(openmpt_export_context* ctx);
+const char* openmpt_export_get_artist(openmpt_export_context* ctx);
+const char* openmpt_export_get_message(openmpt_export_context* ctx);
+const char* openmpt_export_get_tracker(openmpt_export_context* ctx);
 const char* openmpt_export_get_format(openmpt_export_context* ctx);
+const char* openmpt_export_get_format_name(openmpt_export_context* ctx);
 const char* openmpt_export_get_error(openmpt_export_context* ctx);
 
 // Render OPL instruments to VGM

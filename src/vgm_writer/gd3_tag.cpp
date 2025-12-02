@@ -8,6 +8,28 @@
 #include <locale>
 #include <cstring>
 
+std::string GD3Tag::utf16_to_utf8(const uint16_t* data, size_t len)
+{
+    if (!data || len == 0)
+        return "";
+
+    try
+    {
+        std::wstring_convert<std::codecvt_utf8_utf16<char16_t>, char16_t> converter;
+        std::u16string u16str;
+        u16str.reserve(len);
+        for (size_t i = 0; i < len; i++)
+        {
+            u16str.push_back(static_cast<char16_t>(data[i]));
+        }
+        return converter.to_bytes(u16str);
+    }
+    catch (...)
+    {
+        return "";
+    }
+}
+
 std::vector<uint16_t> GD3Tag::utf8_to_utf16(const std::string &utf8)
 {
     std::vector<uint16_t> result;
@@ -89,4 +111,66 @@ std::vector<uint8_t> GD3Tag::serialize() const
     buffer[length_offset + 3] = (data_length >> 24) & 0xFF;
 
     return buffer;
+}
+
+bool GD3Tag::parse(const uint8_t* data, size_t size)
+{
+    // Need at least: magic (4) + version (4) + length (4) = 12 bytes
+    if (!data || size < 12)
+        return false;
+
+    // Check magic "Gd3 "
+    if (data[0] != 'G' || data[1] != 'd' || data[2] != '3' || data[3] != ' ')
+        return false;
+
+    // Read data length (after the 12-byte header)
+    uint32_t data_length = data[8] | (data[9] << 8) | (data[10] << 16) | (data[11] << 24);
+
+    if (size < 12 + data_length)
+        return false;
+
+    // Parse the UTF-16LE strings
+    const uint8_t* str_data = data + 12;
+    size_t remaining = data_length;
+
+    std::string* fields[] = {
+        &title_en, &title,
+        &album_en, &album,
+        &system_en, &system,
+        &author_en, &author,
+        &date,
+        &converted_by,
+        &notes
+    };
+
+    for (std::string* field : fields)
+    {
+        if (remaining < 2)
+            break;
+
+        // Find null terminator (two zero bytes)
+        std::vector<uint16_t> chars;
+        while (remaining >= 2)
+        {
+            uint16_t ch = str_data[0] | (str_data[1] << 8);
+            str_data += 2;
+            remaining -= 2;
+
+            if (ch == 0)
+                break;
+
+            chars.push_back(ch);
+        }
+
+        if (!chars.empty())
+        {
+            *field = utf16_to_utf8(chars.data(), chars.size());
+        }
+        else
+        {
+            field->clear();
+        }
+    }
+
+    return true;
 }

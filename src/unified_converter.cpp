@@ -1003,10 +1003,12 @@ int convert_native_opl(const Options& opts)
     }
 
     // Get file info
-    printf("Format: %s\n", player->gettype().c_str());
+    std::string format_type = player->gettype();
+    printf("Format: %s\n", format_type.c_str());
 
     std::string title = player->gettitle();
     std::string author = player->getauthor();
+    std::string desc = player->getdesc();
     if (!title.empty())
         printf("Title:  %s\n", title.c_str());
     if (!author.empty())
@@ -1124,7 +1126,7 @@ int convert_native_opl(const Options& opts)
         }
     }
 
-    // Create GD3 tag
+    // Create GD3 tag with metadata from file and/or command line
     GD3Tag* gd3_tag = nullptr;
     if (!opts.title.empty() || !opts.author.empty() || !opts.album.empty() ||
         !title.empty() || !author.empty())
@@ -1133,10 +1135,19 @@ int convert_native_opl(const Options& opts)
         gd3_tag->title_en = opts.title.empty() ? title : opts.title;
         gd3_tag->author_en = opts.author.empty() ? author : opts.author;
         gd3_tag->album_en = opts.album;
-        gd3_tag->system_en = opts.system;
+        gd3_tag->system_en = opts.system.empty() ? format_type : opts.system;
         gd3_tag->date = opts.date;
         gd3_tag->converted_by = "fmconv (AdPlug)";
-        gd3_tag->notes = opts.notes;
+        // Use description for notes if no custom notes provided
+        if (opts.notes.empty() && !desc.empty()) {
+            std::string notes = desc;
+            if (notes.length() > 256) {
+                notes = notes.substr(0, 253) + "...";
+            }
+            gd3_tag->notes = notes;
+        } else {
+            gd3_tag->notes = opts.notes;
+        }
     }
 
     // Generate VGM
@@ -1265,6 +1276,98 @@ int convert_vgm_passthrough(const Options& opts)
         vgm_data.resize(fm9_pos);
     }
 
+    // Check for existing GD3 tag and parse it
+    // GD3 offset is stored at 0x14 (relative to 0x14)
+    GD3Tag existing_gd3;
+    bool has_existing_gd3 = false;
+    uint32_t gd3_offset = 0;
+
+    if (vgm_data.size() >= 0x18)
+    {
+        uint32_t gd3_rel = vgm_data[0x14] | (vgm_data[0x15] << 8) |
+                          (vgm_data[0x16] << 16) | (vgm_data[0x17] << 24);
+
+        if (gd3_rel > 0)
+        {
+            gd3_offset = 0x14 + gd3_rel;
+            if (gd3_offset < vgm_data.size())
+            {
+                if (existing_gd3.parse(vgm_data.data() + gd3_offset, vgm_data.size() - gd3_offset))
+                {
+                    has_existing_gd3 = true;
+                    printf("Found existing GD3 tag at offset 0x%X\n", gd3_offset);
+                    if (!existing_gd3.title_en.empty())
+                        printf("  Title: %s\n", existing_gd3.title_en.c_str());
+                    if (!existing_gd3.author_en.empty())
+                        printf("  Author: %s\n", existing_gd3.author_en.c_str());
+                }
+            }
+        }
+    }
+
+    // Check if any CLI metadata options were provided
+    bool has_cli_metadata = !opts.title.empty() || !opts.author.empty() ||
+                            !opts.album.empty() || !opts.system.empty() ||
+                            !opts.date.empty() || !opts.notes.empty();
+
+    // If CLI options provided, merge them with existing GD3 (CLI overrides existing)
+    if (has_cli_metadata)
+    {
+        GD3Tag new_gd3;
+
+        if (has_existing_gd3)
+        {
+            // Start with existing values
+            new_gd3 = existing_gd3;
+        }
+
+        // Override with CLI values where provided
+        if (!opts.title.empty())
+            new_gd3.title_en = opts.title;
+        if (!opts.author.empty())
+            new_gd3.author_en = opts.author;
+        if (!opts.album.empty())
+            new_gd3.album_en = opts.album;
+        if (!opts.system.empty())
+            new_gd3.system_en = opts.system;
+        if (!opts.date.empty())
+            new_gd3.date = opts.date;
+        if (!opts.notes.empty())
+            new_gd3.notes = opts.notes;
+
+        // Mark as converted by fmconv
+        if (new_gd3.converted_by.empty())
+            new_gd3.converted_by = "fmconv";
+
+        // Serialize new GD3 tag
+        std::vector<uint8_t> gd3_data = new_gd3.serialize();
+
+        // Strip old GD3 tag from VGM data (if present)
+        if (has_existing_gd3 && gd3_offset > 0 && gd3_offset < vgm_data.size())
+        {
+            vgm_data.resize(gd3_offset);
+        }
+
+        // Update GD3 offset in header
+        uint32_t new_gd3_offset = static_cast<uint32_t>(vgm_data.size()) - 0x14;
+        vgm_data[0x14] = (new_gd3_offset >> 0) & 0xFF;
+        vgm_data[0x15] = (new_gd3_offset >> 8) & 0xFF;
+        vgm_data[0x16] = (new_gd3_offset >> 16) & 0xFF;
+        vgm_data[0x17] = (new_gd3_offset >> 24) & 0xFF;
+
+        // Append new GD3 data
+        vgm_data.insert(vgm_data.end(), gd3_data.begin(), gd3_data.end());
+
+        // Update EOF offset in header (relative to 0x04)
+        uint32_t eof_offset = static_cast<uint32_t>(vgm_data.size()) - 4;
+        vgm_data[0x04] = (eof_offset >> 0) & 0xFF;
+        vgm_data[0x05] = (eof_offset >> 8) & 0xFF;
+        vgm_data[0x06] = (eof_offset >> 16) & 0xFF;
+        vgm_data[0x07] = (eof_offset >> 24) & 0xFF;
+
+        printf("Updated GD3 metadata\n");
+    }
+
     printf("VGM data size: %zu bytes\n", vgm_data.size());
 
     // Write output
@@ -1304,13 +1407,21 @@ int convert_openmpt(const Options& opts)
 
     // Get file info
     const char* title = openmpt_export_get_title(ctx);
+    const char* artist = openmpt_export_get_artist(ctx);
+    const char* message = openmpt_export_get_message(ctx);
+    const char* tracker = openmpt_export_get_tracker(ctx);
     const char* format = openmpt_export_get_format(ctx);
+    const char* format_name = openmpt_export_get_format_name(ctx);
     bool has_opl = openmpt_export_has_opl(ctx) != 0;
     bool has_samples = openmpt_export_has_samples(ctx) != 0;
 
     printf("Format: %s\n", format);
     if (title && title[0])
         printf("Title:  %s\n", title);
+    if (artist && artist[0])
+        printf("Artist: %s\n", artist);
+    if (tracker && tracker[0])
+        printf("Tracker: %s\n", tracker);
     printf("Contains: %s%s%s\n",
            has_opl ? "OPL instruments" : "",
            (has_opl && has_samples) ? " + " : "",
@@ -1463,19 +1574,31 @@ int convert_openmpt(const Options& opts)
                vgm_data.size(), total_samples, total_samples / 44100.0f);
     }
 
-    // Create GD3 tag
+    // Create GD3 tag with metadata from module and/or command line
     GD3Tag* gd3_tag = nullptr;
     if (!opts.title.empty() || !opts.author.empty() || !opts.album.empty() ||
-        (title && title[0]))
+        (title && title[0]) || (artist && artist[0]))
     {
         gd3_tag = new GD3Tag();
+        // Command line overrides module metadata
         gd3_tag->title_en = opts.title.empty() ? (title ? title : "") : opts.title;
-        gd3_tag->author_en = opts.author;
+        gd3_tag->author_en = opts.author.empty() ? (artist ? artist : "") : opts.author;
         gd3_tag->album_en = opts.album;
-        gd3_tag->system_en = opts.system;
+        gd3_tag->system_en = opts.system.empty() ? (format_name ? format_name : "") : opts.system;
         gd3_tag->date = opts.date;
-        gd3_tag->converted_by = "fmconv (OpenMPT)";
-        gd3_tag->notes = opts.notes;
+        gd3_tag->converted_by = tracker && tracker[0] ?
+            std::string("fmconv (") + tracker + ")" : "fmconv (OpenMPT)";
+        // Include message in notes if present and no custom notes provided
+        if (opts.notes.empty() && message && message[0]) {
+            // Truncate long messages
+            std::string msg(message);
+            if (msg.length() > 256) {
+                msg = msg.substr(0, 253) + "...";
+            }
+            gd3_tag->notes = msg;
+        } else {
+            gd3_tag->notes = opts.notes;
+        }
     }
 
     // Add GD3 tag to VGM if we have metadata

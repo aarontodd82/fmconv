@@ -212,7 +212,11 @@ struct OpenmptExportContext {
 
     // Module info
     std::string title;
+    std::string artist;
+    std::string message;
+    std::string tracker;
     std::string format_type;
+    std::string format_name;
     bool has_opl;
     bool has_samples;
 };
@@ -261,8 +265,21 @@ int openmpt_export_load(openmpt_export_context* ctx, const char* filepath) {
         // Extract info
         // GetTitle() returns std::string which is already UTF8-compatible
         ctx->title = ctx->sndFile->GetTitle();
-        // fileExtension is a const char*, just copy it directly
+
+        // Artist (mpt::ustring needs conversion to UTF8)
+        ctx->artist = mpt::transcode<std::string>(mpt::common_encoding::utf8, ctx->sndFile->m_songArtist);
+
+        // Song message/comments
+        ctx->message = ctx->sndFile->m_songMessage.GetFormatted(OpenMPT::SongMessage::leLF);
+
+        // What tracker made it
+        ctx->tracker = mpt::transcode<std::string>(mpt::common_encoding::utf8,
+            ctx->sndFile->m_modFormat.madeWithTracker);
+
+        // Format info
         ctx->format_type = ctx->sndFile->GetModSpecifications().fileExtension;
+        ctx->format_name = mpt::transcode<std::string>(mpt::common_encoding::utf8,
+            ctx->sndFile->m_modFormat.formatName);
 
         // Check for OPL and sample instruments
         ctx->has_opl = false;
@@ -300,8 +317,24 @@ const char* openmpt_export_get_title(openmpt_export_context* ctx) {
     return ctx ? ctx->title.c_str() : "";
 }
 
+const char* openmpt_export_get_artist(openmpt_export_context* ctx) {
+    return ctx ? ctx->artist.c_str() : "";
+}
+
+const char* openmpt_export_get_message(openmpt_export_context* ctx) {
+    return ctx ? ctx->message.c_str() : "";
+}
+
+const char* openmpt_export_get_tracker(openmpt_export_context* ctx) {
+    return ctx ? ctx->tracker.c_str() : "";
+}
+
 const char* openmpt_export_get_format(openmpt_export_context* ctx) {
     return ctx ? ctx->format_type.c_str() : "";
+}
+
+const char* openmpt_export_get_format_name(openmpt_export_context* ctx) {
+    return ctx ? ctx->format_name.c_str() : "";
 }
 
 const char* openmpt_export_get_error(openmpt_export_context* ctx) {
