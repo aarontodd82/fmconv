@@ -153,6 +153,10 @@ uint8_t FM9Writer::detectAudioFormat(const std::string& path) {
     return FM9_AUDIO_NONE;
 }
 
+void FM9Writer::setSourceFormat(const std::string& extension) {
+    source_format_ = extensionToSourceFormat(extension.c_str());
+}
+
 bool FM9Writer::setAudioFile(const std::string& path) {
     audio_format_ = detectAudioFormat(path);
     if (audio_format_ == FM9_AUDIO_NONE) {
@@ -545,7 +549,7 @@ FM9Header FM9Writer::buildHeader() const {
     if (!image_data_.empty()) header.flags |= FM9_FLAG_HAS_IMAGE;
 
     header.audio_format = audio_format_;
-    header.reserved = 0;
+    header.source_format = static_cast<uint8_t>(source_format_);
 
     // Offsets are from start of FM9 header (within decompressed data)
     // FX data is in the compressed section, right after the header

@@ -29,7 +29,7 @@ add_subdirectory(adplug)
 # ============================================================================
 # libopenmpt - for S3M/MOD/XM/IT format conversion (optional)
 # ============================================================================
-option(BUILD_OPENMPT "Build libopenmpt for S3M/MOD/XM/IT support" OFF)
+option(BUILD_OPENMPT "Build libopenmpt for S3M/MOD/XM/IT support" ON)
 if(BUILD_OPENMPT AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/openmpt)
     include(cmake/libopenmpt.cmake)
 endif()

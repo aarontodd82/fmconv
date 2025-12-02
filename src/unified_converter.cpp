@@ -387,6 +387,10 @@ static size_t writeOutputFile(const std::string& filename,
         FM9Writer writer;
         writer.setVGMData(vgm_data);
 
+        // Set source format from input file extension
+        std::string ext = getExtension(opts.input_file);
+        writer.setSourceFormat(ext);
+
         // Load optional audio
         if (!opts.audio_file.empty())
         {
@@ -1489,6 +1493,10 @@ int convert_openmpt(const Options& opts)
         // FM9 with embedded sample audio
         FM9Writer writer;
         writer.setVGMData(vgm_data);
+
+        // Set source format from input file extension
+        std::string ext = getExtension(opts.input_file);
+        writer.setSourceFormat(ext);
 
         // Convert PCM to WAV format for embedding
         // PCM data is stereo interleaved int16_t at sample_rate

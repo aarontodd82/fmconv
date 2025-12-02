@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include "source_format.h"
 
 // FM9 Extension Header (24 bytes)
 struct FM9Header {
@@ -21,7 +22,7 @@ struct FM9Header {
     uint8_t  version;         // Format version (1)
     uint8_t  flags;           // Bit flags
     uint8_t  audio_format;    // 0=none, 1=WAV, 2=MP3
-    uint8_t  reserved;        // Padding
+    uint8_t  source_format;   // Original file format (see source_format.h)
     uint32_t audio_offset;    // Offset from FM9 header start to audio data
     uint32_t audio_size;      // Size of audio data in bytes
     uint32_t fx_offset;       // Offset from FM9 header start to FX data
@@ -50,6 +51,11 @@ public:
 
     // Set VGM data (required)
     void setVGMData(const std::vector<uint8_t>& vgm_data);
+
+    // Set source format (original file type before conversion)
+    void setSourceFormat(SourceFormat fmt) { source_format_ = fmt; }
+    void setSourceFormat(const std::string& extension);
+    SourceFormat getSourceFormat() const { return source_format_; }
 
     // Set optional audio file (WAV or MP3)
     // Returns false if file cannot be loaded or format not recognized
@@ -86,6 +92,7 @@ private:
     std::vector<uint8_t> fx_data_;
     std::vector<uint8_t> image_data_;  // 100x100 RGB565 (20000 bytes when set)
     uint8_t audio_format_ = FM9_AUDIO_NONE;
+    SourceFormat source_format_ = SRC_UNKNOWN;
     std::string error_;
 
     // Detect audio format from file extension and magic bytes
