@@ -1731,13 +1731,22 @@ int convert_openmpt(const Options& opts)
             // Encode to MP3
             printf("Encoding audio to MP3 (%d kbps)...\n", opts.audio_bitrate);
 
+            // LAME encoder adds ~2250 samples of delay (576 encoder + 529 decoder + frame alignment)
+            // Skip that many samples from the source to compensate
+            const size_t MP3_ENCODER_DELAY_SAMPLES = 2250;
+            size_t skip_samples = std::min(MP3_ENCODER_DELAY_SAMPLES, pcm_sample_count);
+            size_t skip_values = skip_samples * 2;  // Stereo = 2 int16_t per sample
+
+            const int16_t* mp3_pcm_start = pcm_data.data() + skip_values;
+            size_t mp3_sample_count = pcm_sample_count - skip_samples;
+
             MP3EncoderConfig mp3_config;
             mp3_config.sample_rate = sample_rate;
             mp3_config.channels = 2;
             mp3_config.bitrate_kbps = opts.audio_bitrate;
 
             std::string mp3_error;
-            audio_data = encodePCMtoMP3(pcm_data.data(), pcm_sample_count, mp3_config, &mp3_error);
+            audio_data = encodePCMtoMP3(mp3_pcm_start, mp3_sample_count, mp3_config, &mp3_error);
 
             if (audio_data.empty())
             {
