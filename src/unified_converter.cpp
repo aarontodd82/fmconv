@@ -1631,6 +1631,15 @@ int convert_openmpt(const Options& opts)
         vgm_data[0x36] = (data_offset >> 16) & 0xFF;
         vgm_data[0x37] = (data_offset >> 24) & 0xFF;
 
+        // YMF262 (OPL3) clock at offset 0x5C - required for player compatibility
+        // Even though we have no OPL commands, the player needs a valid chip type
+        // Standard OPL3 clock = 14318180 Hz
+        uint32_t opl3_clock = 14318180;
+        vgm_data[0x5C] = (opl3_clock >> 0) & 0xFF;
+        vgm_data[0x5D] = (opl3_clock >> 8) & 0xFF;
+        vgm_data[0x5E] = (opl3_clock >> 16) & 0xFF;
+        vgm_data[0x5F] = (opl3_clock >> 24) & 0xFF;
+
         // Add wait commands for the duration
         uint32_t remaining = total_samples;
         while (remaining > 0)
